@@ -21,6 +21,15 @@ const events = (content: string, exitCode = 0) => [
 ].map(event => JSON.stringify(event)).join('\n') + '\n'
 const inputs = (call: AgentCall) => JSON.parse(call.prompt.split('Stage inputs:\n').at(-1)!.split('\n\n')[0]!)
 
+async function assertPrivateDiagnostics(file: string, response: unknown) {
+  if (process.platform === 'win32') {
+    await assert.rejects(readFile(file), { code: 'ENOENT' })
+  } else {
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')).response, response)
+    assert.equal((await stat(file)).mode & 0o777, 0o600)
+  }
+}
+
 async function setup(t: TestContext, Store: typeof RunStore = RunStore) {
   const f = await makeFixture()
   t.after(f.cleanup)
@@ -88,9 +97,7 @@ test('a wrong citation range is retried without cancelling the independent peer 
   const metadata = artifacts['attempts/investigate/B-1.json'] as { category: string }
   assert.equal(metadata.category, 'citation')
   const file = join(s.runsDir, s.run.id, 'diagnostics/investigate/B-1.json')
-  const rejectedTrace = JSON.parse(await readFile(file, 'utf8'))
-  assert.deepEqual(rejectedTrace.response, rejected)
-  if (process.platform !== 'win32') assert.equal((await stat(file)).mode & 0o777, 0o600)
+  await assertPrivateDiagnostics(file, rejected)
   assert.ok(!Object.keys(artifacts).some(name => name.startsWith('diagnostics/')))
 })
 
@@ -196,14 +203,26 @@ for (const nativeExit of [0, 1]) {
   })
 }
 
-test('three rejected responses exhaust recovery and their private diagnostics survive service restart', async t => {
-  const s = await setup(t)
+test('three rejected responses exhaust recovery while preserving the published peer report and rejection history through restart', async t => {
+  let markReportPublished!: () => void
+  const reportPublished = new Promise<void>(resolve => { markReportPublished = resolve })
+  class ObservedStore extends RunStore {
+    override async publish(id: string, name: string, value: unknown) {
+      const saved = await super.publish(id, name, value)
+      if (name === 'reports/A.json') markReportPublished()
+      return saved
+    }
+  }
+  const s = await setup(t, ObservedStore)
   let attempts = 0
   const raw = 'sensitive-unpublished-text: not JSON ' + 'x'.repeat(16_000)
   const artifacts = await s.execute(codexAdapter(undefined, async (_provider, _args, call) => {
     if (call.stage === 'investigate') {
       attempts++
       assert.ok(call.prompt.length < 15_000, 'only a bounded preview of a rejected response belongs in the retry prompt')
+      // Exhaustion cancels the peer. First establish the durable publication that
+      // this test requires to survive; adapter completion alone does not prove it.
+      if (attempts === 3) await reportPublished
       return raw
     }
     return JSON.stringify(s.answer(call))
@@ -221,8 +240,7 @@ test('three rejected responses exhaust recovery and their private diagnostics su
   const restarted = await openService({ runsDir: s.runsDir })
   try {
     assert.deepEqual(await restarted.artifacts(s.run.id), artifacts)
-    const trace = JSON.parse(await readFile(join(s.runsDir, s.run.id, 'diagnostics/investigate/B-3.json'), 'utf8'))
-    assert.equal(trace.response, raw)
+    await assertPrivateDiagnostics(join(s.runsDir, s.run.id, 'diagnostics/investigate/B-3.json'), raw)
   } finally { await restarted.close() }
 })
 
@@ -293,7 +311,7 @@ test('an authentication error cannot be retried under the native empty-response 
   const result = artifacts['result.json'] as Result
   assert.ok(result.status === 'failed')
   assert.equal(attempts, 1)
-  assert.match(result.error.message, /login or provider credentials/)
+  assert.match(result.error.message, /session error/)
   assert.ok(!JSON.stringify(artifacts).includes('PRIVATE_TOKEN'))
 })
 
@@ -319,7 +337,7 @@ test('a rejection publication failure stops recovery and reconciles its saved di
   assert.equal(attempts, 1)
   assert.ok(artifacts['attempts/investigate/B-1.json'])
   assert.equal(artifacts['attempts/investigate/B-2.json'], undefined)
-  assert.equal(JSON.parse(await readFile(join(s.runsDir, s.run.id, 'diagnostics/investigate/B-1.json'), 'utf8')).response, 'not JSON')
+  await assertPrivateDiagnostics(join(s.runsDir, s.run.id, 'diagnostics/investigate/B-1.json'), 'not JSON')
 })
 
 for (const kind of ['truncated', 'nonempty-failed', 'tool-only', 'wrong-exit', 'extra-stderr'] as const) {

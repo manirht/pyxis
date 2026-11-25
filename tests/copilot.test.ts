@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { copilotAdapter } from '../src/adapters/copilot.ts'
 import { prepareCopilotLaunch } from '../src/adapters/copilot-home.ts'
+import { invokeProvider } from '../src/adapters/process.ts'
 import { bindProvider, createAdapters, isProvider } from '../src/adapters/index.ts'
 import { parseOutput, shapes } from '../src/workflow/outputs.ts'
 import type { AgentCall } from '../src/types.ts'
@@ -166,4 +167,102 @@ test('CLI help exposes the Copilot model setting and role config', async () => {
   assert.match(stdout, /roles\.A or roles\.B to "copilot"/)
   assert.match(stdout, /rca\.config\.json/)
   assert.match(stdout, /RCA_COPILOT_MODEL/)
+})
+
+async function bundledCopilotFixture(t: test.TestContext, version: string,
+  help = '--available-tools --sync-session', output = response()) {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'rca-copilot-version-'))
+  t.after(async () => { await rm(root, { recursive: true, force: true }) })
+  const executable = join(root, 'copilot')
+  const log = join(root, 'invocations.jsonl')
+  async function install(actualVersion: string) {
+    await writeFile(executable, `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args)+'\\n');
+if(args.includes('--version')) process.stdout.write(${JSON.stringify(actualVersion)});
+else if(args.includes('--help')) process.stdout.write(${JSON.stringify(help)});
+else { process.stdin.resume(); process.stdin.on('end', () => process.stdout.write(${JSON.stringify(output)})); }
+`)
+    await chmod(executable, 0o700)
+  }
+  await install(version)
+  return {
+    async invoke() {
+      const oldPath = process.env.PATH
+      process.env.PATH = root
+      try {
+        return await copilotAdapter(undefined, invokeProvider)({ ...call, cwd: root, evidenceDir: undefined }, AbortSignal.timeout(5000))
+      } finally {
+        if (oldPath === undefined) delete process.env.PATH
+        else process.env.PATH = oldPath
+      }
+    },
+    async invocations(): Promise<string[][]> { return (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)) },
+    async replace(actualVersion: string) {
+      const previous = await stat(executable)
+      await install(actualVersion)
+      await utimes(executable, previous.atime, new Date(previous.mtimeMs + 2000))
+    },
+  }
+}
+
+test('Copilot rejects old, prerelease and unrecognized bundled versions before a model call', {
+  skip: process.platform === 'win32',
+}, async t => {
+  for (const version of [
+    'GitHub Copilot CLI 1.0.94.\nRun \'copilot update\' to check for updates.\n',
+    '1.0.96', '0.99.999', '1.0.97-rc.1', '1.0.115-preview.1',
+    'unknown', 'error: 1.0.115 is available', '1.0.115\nprivate version diagnostic',
+    '1.0.097', '9007199254740993.0.0', '',
+  ]) {
+    await t.test(JSON.stringify(version), async t => {
+      const fixture = await bundledCopilotFixture(t, version)
+      await assert.rejects(fixture.invoke(), error => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /GitHub Copilot.*1\.0\.97/)
+        assert.ok(!error.message.includes('private version diagnostic'))
+        return true
+      })
+      assert.deepEqual(await fixture.invocations(), [['--no-auto-update', '--version']])
+    })
+  }
+})
+
+test('Copilot checks and caches bundled version and safe-session flags, then rechecks after executable changes', {
+  skip: process.platform === 'win32',
+}, async t => {
+  for (const help of ['--available-tools --sync-session', '--available-tools --no-remote-export']) {
+    await t.test(help, async t => {
+      const fixture = await bundledCopilotFixture(t, "GitHub Copilot CLI 1.0.115.\nRun 'copilot update' to check for updates.\n", help)
+      assert.deepEqual(await fixture.invoke(), report)
+      assert.deepEqual(await fixture.invoke(), report)
+      const invocations = await fixture.invocations()
+      assert.deepEqual(invocations.slice(0, 2), [['--no-auto-update', '--version'], ['--no-auto-update', '--help']])
+      assert.equal(invocations.length, 4)
+      for (const args of invocations.slice(2)) {
+        assert.ok(args.includes('--no-auto-update'))
+        assert.ok(args.includes(help.includes('--sync-session') ? '--sync-session=off' : '--no-remote-export'))
+      }
+      await fixture.replace('1.0.94')
+      await assert.rejects(fixture.invoke(), /1\.0\.97/)
+      assert.deepEqual((await fixture.invocations()).at(-1), ['--no-auto-update', '--version'])
+      assert.equal((await fixture.invocations()).length, 5)
+    })
+  }
+})
+
+test('the minimum bundled version still requires supported local-session flags and streams only stage JSONL', {
+  skip: process.platform === 'win32',
+}, async t => {
+  for (const help of ['--available-tools', '--sync-session', '']) {
+    await t.test('missing capabilities ' + JSON.stringify(help), async t => {
+      const fixture = await bundledCopilotFixture(t, '1.0.97', help)
+      await assert.rejects(fixture.invoke(), /restricted local sessions/)
+      assert.deepEqual(await fixture.invocations(), [['--no-auto-update', '--version'], ['--no-auto-update', '--help']])
+    })
+  }
+  const heavyOutput = jsonl(...Array.from({ length: 32 }, () => ({ type: 'tool.execution_complete', data: { content: 'x'.repeat(64 * 1024) } })), message(JSON.stringify(report)), completed)
+  const fixture = await bundledCopilotFixture(t, '1.0.97', '--available-tools --sync-session', heavyOutput)
+  assert.deepEqual(await fixture.invoke(), report)
 })

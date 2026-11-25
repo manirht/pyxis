@@ -29,6 +29,10 @@ Edit [rca.config.json](rca.config.json) before starting the service. Each role a
 
 Check the selected executables with `claude --version`, `codex --version`, or `copilot --version`. For Claude and Codex, check sign-in with `claude auth status` and `codex login status`. The Copilot adapter can use your GitHub CLI login (`gh auth status`) or a supported `COPILOT_GITHUB_TOKEN` from your environment. Keep credentials out of the config file.
 
+Copilot requires a stable bundled CLI version **1.0.97 or newer** for its JSON event output. Check the binary Pyxis actually launches with `copilot --no-auto-update --version`; plain `copilot --version` can describe a newer auto-updated cache. Preflight rejects older, prerelease, or unrecognized versions before submitting a model prompt and also verifies the restricted-session flags. The live acceptance suite used bundled CLI 1.0.115. See the [1.0.97 release notes](https://github.com/github/copilot-cli/releases/tag/v1.0.97) for the JSON writer correction.
+
+Copilot events are parsed incrementally. The independent limits are 32 MiB of total event bytes, 4 MiB per event, and 2 MiB for the final root answer. Tool-event content is discarded after validation rather than charged against the final-answer budget. Missing, malformed, or duplicate terminal events and structured session failures still stop the run. Other providers retain the 2 MiB stdout limit. The original stage deadline applies throughout.
+
 ## Start and use the service
 
 In the first terminal, run `rca serve`. In a second terminal, change directory to the local Git repository you want to investigate, then run:
@@ -45,6 +49,8 @@ Stop the service with Ctrl+C. Let active investigations finish before restarting
 
 Use `RCA_RUNS_DIR` to change the durable run directory, `RCA_TEMP_ROOT` for temporary worktrees, and `RCA_STAGE_TIMEOUT_MS` for stage deadlines in milliseconds. `RCA_CLAUDE_MODEL`, `RCA_CODEX_MODEL`, and `RCA_COPILOT_MODEL` override their respective CLI model defaults. Set these in the terminal that launches the service.
 
-A stage permits at most three fresh attempts per reviewer for recoverable model-output errors. `stageTimeoutMs` / `RCA_STAGE_TIMEOUT_MS` remains one deadline shared by all attempts in that stage, including both concurrent reviewers. Retries can consume additional provider quota. Inspect the run's `attempts/` artifacts for rejection feedback; rejected responses are retained separately in private `diagnostics/` files and are not returned by the API. See the [README](README.md) for terminal failure conditions.
+A stage permits at most three fresh attempts per reviewer for recoverable model-output errors. `stageTimeoutMs` / `RCA_STAGE_TIMEOUT_MS` remains one deadline shared by all attempts in that stage, including both concurrent reviewers. Retries can consume additional provider quota. Inspect the run's `attempts/` artifacts for safe rejection feedback on every platform. Raw rejected responses are saved separately in owner-only POSIX `diagnostics/` files and are not returned by the API. Raw diagnostic persistence is disabled on Windows because POSIX file modes do not enforce private Windows ACLs; existing legacy files are preserved and should have their access reviewed separately. See the [README](README.md) for terminal failure conditions.
 
 Run `npm run check` and `npm test` from the harness directory for type checking and local regression tests. `npm run test:live` runs a real investigation on a generated Git fixture. `npm run test:permissions -- copilot` checks the installed Copilot adapter. Both live commands can consume provider quota.
+
+Pull requests run the local checks on Node.js 24 with standard Linux, macOS, and Windows GitHub runners. These checks use deterministic provider fixtures and do not access real model accounts. The separate opt-in live commands still require your local provider login.

@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import type { AgentCall } from '../types.ts';
 import { ModelOutputError } from '../output-error.ts';
 import { prepareCopilotLaunch } from './copilot-home.ts';
+import { CopilotStream } from './copilot-stream.ts';
 
 type Provider = 'claude' | 'codex' | 'copilot';
 const displayNames = { claude: 'Claude Code', codex: 'Codex', copilot: 'GitHub Copilot' };
@@ -113,16 +114,26 @@ export interface ProcessRequest {
   input: string;
   signal: AbortSignal;
   env: NodeJS.ProcessEnv;
+  outputMode?: 'copilot-jsonl';
 }
 
 export class ProviderExitError extends Error {
-  output: string;
-  emptyModelResponse: boolean;
-  constructor(message: string, output: string, emptyModelResponse: boolean) {
+  readonly exitCode: number | null;
+  readonly stderrTruncated: boolean;
+  #stdout: string;
+  #stderr: Buffer;
+  constructor(message: string, exitCode: number | null, stdout: string, stderr: Buffer, stderrTruncated = false) {
     super(message);
-    this.output = output;
-    this.emptyModelResponse = emptyModelResponse;
+    this.exitCode = exitCode;
+    this.#stdout = stdout;
+    this.#stderr = Buffer.from(stderr.subarray(-diagnosticBytes));
+    this.stderrTruncated = stderrTruncated || stderr.length > diagnosticBytes;
   }
+
+  // Provider diagnostics are available only to adapter logic. Private fields
+  // and prototype getters keep source and credentials out of error serialization.
+  get stdout(): string { return this.#stdout; }
+  get stderr(): string { return this.#stderr.toString('utf8'); }
 }
 
 export function runProcess(request: ProcessRequest): Promise<string> {
@@ -144,8 +155,10 @@ export function runProcess(request: ProcessRequest): Promise<string> {
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
     });
     const chunks: Buffer[] = [];
+    const stream = request.outputMode === 'copilot-jsonl' ? new CopilotStream() : undefined;
     let bytes = 0;
     let stderr = Buffer.alloc(0);
+    let stderrBytes = 0;
     let stdinFailed = false;
     let failure: Error | undefined;
     let stopping: Promise<void> | undefined;
@@ -169,11 +182,17 @@ export function runProcess(request: ProcessRequest): Promise<string> {
     signal.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (chunk: Buffer) => {
       if (failure) return;
+      if (stream) {
+        try { stream.write(chunk); }
+        catch (error) { stop(error as Error); }
+        return;
+      }
       bytes += chunk.length;
       if (bytes > maxOutputBytes) stop(new Error(`${label} response exceeded the 2 MiB output limit.`));
       else chunks.push(chunk);
     });
     child.stderr.on('data', (chunk: Buffer) => {
+      stderrBytes += chunk.length;
       const tail = Buffer.concat([stderr, chunk.subarray(-diagnosticBytes)]);
       stderr = tail.subarray(-diagnosticBytes);
     });
@@ -185,17 +204,23 @@ export function runProcess(request: ProcessRequest): Promise<string> {
       signal.removeEventListener('abort', onAbort);
       await stopping;
       if (failure) return reject(failure);
-      const output = Buffer.concat(chunks).toString('utf8');
+      let output = stream ? '' : Buffer.concat(chunks).toString('utf8');
       if (code !== 0) {
         const status = code === null ? `on signal ${exitSignal}` : `with exit code ${code}`;
         const diagnostic = stderr.toString('utf8').trim();
-        const detail = failureDetail(diagnostic + '\n' + output);
-        const emptyModelResponse = label === 'GitHub Copilot' && code === 1 &&
-          diagnostic === 'Error: The model returned an empty response, so the run produced no answer.' && !detail;
+        const detail = failureDetail(diagnostic);
+        if (stream) {
+          try { output = stream.collected(); }
+          catch (error) { return reject(error); }
+        }
         return reject(new ProviderExitError(`${label} stopped ${status}.${detail}`,
-          output, emptyModelResponse));
+          code, output, stderr, stderrBytes > diagnosticBytes));
       }
       if (stdinFailed) return reject(new Error(`${label} closed its input before receiving the prompt.`));
+      if (stream) {
+        try { output = stream.compact(); }
+        catch (error) { return reject(error); }
+      }
       resolve(output);
     });
     child.stdin.end(input, 'utf8');
@@ -206,6 +231,16 @@ export type InvokeProvider = (provider: Provider, args: string[], call: AgentCal
 
 let copilotCapability: { executable: string; modified: number; exportFlag: string } | undefined;
 
+function supportedCopilotVersion(output: string): boolean {
+  // Fail closed on prereleases, unknown banners and incidental version numbers.
+  // The bundled CLI prints a period and the fixed update hint after its version.
+  const match = /^(?:GitHub Copilot CLI )?v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.?(?:\r?\nRun 'copilot update' to check for updates\.)?$/.exec(output.trim());
+  if (!match) return false;
+  const [major, minor, patch] = match.slice(1).map(Number);
+  return [major, minor, patch].every(Number.isSafeInteger) &&
+    (major > 1 || (major === 1 && (minor > 0 || patch >= 97)));
+}
+
 async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   const { mtimeMs } = await stat(request.executable);
   if (copilotCapability?.executable === request.executable && copilotCapability.modified === mtimeMs) {
@@ -213,6 +248,10 @@ async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   }
   // --no-auto-update selects the binary's bundled CLI. Its flags can differ
   // from the newer cached package that a plain "copilot --version" describes.
+  const version = await runProcess({ ...request, args: ['--no-auto-update', '--version'], input: '' });
+  if (!supportedCopilotVersion(version)) {
+    throw new Error('GitHub Copilot CLI 1.0.97 or newer (stable) is required for reliable JSON output. Update the bundled CLI.');
+  }
   const usage = await runProcess({ ...request, args: ['--no-auto-update', '--help'], input: '' });
   const exportFlag = usage.includes('--sync-session') ? '--sync-session=off' : '--no-remote-export';
   if (!usage.includes('--available-tools') || !usage.includes(exportFlag.split('=')[0])) {
@@ -239,7 +278,10 @@ export const invokeProvider: InvokeProvider = async (provider, args, call, signa
       executable, args, ...launch, label, signal,
       input: locations.join('\n') + '\n\n' + call.prompt,
     };
-    if (provider === 'copilot') request.args = [...args, await copilotExportFlag(request)];
+    if (provider === 'copilot') {
+      request.args = [...args, await copilotExportFlag(request)];
+      request.outputMode = 'copilot-jsonl';
+    }
     return await runProcess(request);
   } finally {
     if (dirname(scratch) === scratchRoot) {

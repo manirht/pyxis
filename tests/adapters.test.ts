@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+import { inspect } from 'node:util';
 import { claudeAdapter } from '../src/adapters/claude.ts';
 import { codexAdapter } from '../src/adapters/codex.ts';
-import { runProcess } from '../src/adapters/process.ts';
+import { ProviderExitError, runProcess } from '../src/adapters/process.ts';
 import type { AgentCall } from '../src/types.ts';
 
 const call: AgentCall = {
@@ -123,6 +124,34 @@ test('process errors expose status without leaking diagnostics or prompt text', 
   await assert.rejects(runNode("process.stdout.write('x'.repeat(2*1024*1024+1))"), /2 MiB output limit/);
   await assert.rejects(runNode("throw new Error('must not start')", { signal: AbortSignal.abort() }),
     { name: 'AbortError' });
+});
+
+test('native process exit failures carry typed status and bounded private output without serializing it', async () => {
+  await assert.rejects(runNode(`
+    process.stdout.write('PRIVATE-STDOUT');
+    process.stderr.write('PREFIX-PRIVATE' + 'x'.repeat(16*1024) + 'PRIVATE-STDERR');
+    process.exitCode = 7;
+  `), error => {
+    assert.ok(error instanceof ProviderExitError);
+    assert.equal(error.exitCode, 7);
+    assert.equal(error.stdout, 'PRIVATE-STDOUT');
+    assert.ok(error.stderr.endsWith('PRIVATE-STDERR'));
+    assert.ok(!error.stderr.includes('PREFIX-PRIVATE'));
+    assert.ok(Buffer.byteLength(error.stderr) <= 8192);
+    assert.equal(error.stderrTruncated, true);
+    for (const publicText of [error.message, String(error), JSON.stringify(error), inspect(error)]) {
+      assert.ok(!publicText.includes('PRIVATE-STDOUT'));
+      assert.ok(!publicText.includes('PRIVATE-STDERR'));
+    }
+    assert.ok(!Object.keys(error).includes('stderr'));
+    assert.ok(!Object.keys(error).includes('stdout'));
+    return true;
+  });
+});
+
+test('model or source stdout cannot classify native process failure diagnostics', async () => {
+  await assert.rejects(runNode(`process.stdout.write('authentication failed, network error, usage limit reached'); process.exitCode=1;`),
+    error => error instanceof ProviderExitError && error.exitCode === 1 && error.message === 'Fixture stopped with exit code 1.' && error.stderr === '' && !error.stderrTruncated);
 });
 
 test('a cancelled call exits with its spawned descendant', { timeout: 15_000 }, async t => {

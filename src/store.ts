@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { PinnedInput, Result, RunRecord } from './types.ts'
+import { MAX_MODEL_OUTPUT_ATTEMPTS } from './limits.ts'
 
 const roles = ['A', 'B']
 const attemptArtifacts = ['investigate', 'critique', 'draft', 'revise', 'vote-v1', 'vote-v2']
-  .flatMap(stage => roles.flatMap(role => [1, 2, 3].map(attempt => `attempts/${stage}/${role}-${attempt}.json`)))
+  .flatMap(stage => roles.flatMap(role => Array.from({ length: MAX_MODEL_OUTPUT_ATTEMPTS },
+    (_, index) => `attempts/${stage}/${role}-${index + 1}.json`)))
 const knownArtifacts = [
   ...attemptArtifacts,
   ...roles.map(role => `reports/${role}.json`),
@@ -81,7 +83,13 @@ export async function claimStore(root: string): Promise<() => Promise<void>> {
 export class RunStore {
   root: string
   private tail: Promise<unknown> = Promise.resolve()
-  constructor(root: string) { this.root = root }
+  private readonly retainRawDiagnostics: boolean
+  constructor(root: string, platform: NodeJS.Platform = process.platform) {
+    this.root = root
+    // A platform override can disable retention for tests, but cannot enable it
+    // on Windows: POSIX modes do not restrict inherited Windows ACLs.
+    this.retainRawDiagnostics = process.platform !== 'win32' && platform !== 'win32'
+  }
 
   private directory(id: string) {
     if (!isRunId(id)) throw new Error('Invalid run ID')
@@ -150,17 +158,20 @@ export class RunStore {
     })
   }
 
-  // Rejected model content stays in owner-only diagnostics, outside the API's
-  // artifact allowlist. Publish only generated validation feedback and metadata.
+  // Retain rejected content only where mode 0600 enforces owner-only access.
+  // Windows keeps safe metadata but never writes raw content under inherited ACLs.
+  // Raw diagnostics are always outside the API's artifact allowlist.
   recordRejection(id: string, name: string, metadata: unknown, response: unknown) {
     if (!attemptArtifacts.includes(name)) throw new Error('Unknown attempt artifact')
     return this.change(id, async run => {
       if (run.status !== 'running') throw new Error('Run has stopped accepting artifacts')
-      const privateName = name.replace(/^attempts\//, 'diagnostics/')
-      const file = join(this.directory(id), privateName)
-      try { await stat(file); throw new Error('Attempt diagnostics already saved') }
-      catch (e) { if (!isMissing(e)) throw e }
-      await atomicWrite(file, jsonBytes({ feedback: metadata, response }))
+      if (this.retainRawDiagnostics) {
+        const privateName = name.replace(/^attempts\//, 'diagnostics/')
+        const file = join(this.directory(id), privateName)
+        try { await stat(file); throw new Error('Attempt diagnostics already saved') }
+        catch (e) { if (!isMissing(e)) throw e }
+        await atomicWrite(file, jsonBytes({ feedback: metadata, response }))
+      }
       await this.writeArtifact(run, name, jsonBytes(metadata))
     })
   }

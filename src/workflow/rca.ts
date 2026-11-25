@@ -4,6 +4,7 @@ import type { Adapters, AgentStage, Proposal, Role, RunError, RunRecord, StageOu
 import { makePrompt } from './prompts.ts'
 import { parseOutput, shapes } from './outputs.ts'
 import { ModelOutputError } from '../output-error.ts'
+import { MAX_MODEL_OUTPUT_ATTEMPTS } from '../limits.ts'
 
 class RoleFailure extends Error {
   role: Role
@@ -35,7 +36,7 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
     const { schema, path: schemaPath } = shapes[action]
     try {
       let feedback: { message: string, response: unknown } | undefined
-      for (let attempt = 1; attempt <= 3; attempt++) {
+      for (let attempt = 1; attempt <= MAX_MODEL_OUTPUT_ATTEMPTS; attempt++) {
         signal.throwIfAborted()
         let raw: unknown
         try {
@@ -51,12 +52,12 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
         } catch (e) {
           signal.throwIfAborted()
           if (!(e instanceof ModelOutputError)) throw e
-          const willRetry = e.retryable && attempt < 3
+          const willRetry = e.retryable && attempt < MAX_MODEL_OUTPUT_ATTEMPTS
           const response = e.response ?? raw ?? null
           await store.recordRejection(id, `attempts/${stage}/${role}-${attempt}.json`,
             { stage, role, attempt, category: e.category, message: e.message, willRetry }, response)
           signal.throwIfAborted()
-          if (!willRetry) throw new Error(e.message + (e.retryable ? ' Recovery exhausted after 3 attempts.' : ''))
+          if (!willRetry) throw new Error(e.message + (e.retryable ? ` Recovery exhausted after ${MAX_MODEL_OUTPUT_ATTEMPTS} attempts.` : ''))
           feedback = { message: e.message, response }
         }
       }

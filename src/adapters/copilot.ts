@@ -1,37 +1,14 @@
 import type { AgentAdapter } from '../types.ts';
 import { invokeProvider, parseOutput, ProviderExitError, type InvokeProvider } from './process.ts';
 import { ModelOutputError } from '../output-error.ts';
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+import { copilotContent } from './copilot-stream.ts';
 
 function responseContent(raw: string, nativeEmptyResponse = false): string {
-  let completed = false;
-  let response: { content: string; hasTools: boolean } | undefined;
-  const invalid = () => new Error('GitHub Copilot returned an invalid or incomplete JSON event stream.');
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    if (completed) throw invalid();
-    const event = parseOutput(line, 'GitHub Copilot', false);
-    if (!isObject(event) || typeof event.type !== 'string') throw invalid();
-    // A structured execution failure must not be mistaken for an empty model answer.
-    if (event.type === 'session.error') throw new Error('GitHub Copilot reported a session error.');
-    if (event.type === 'result') {
-      if (event.exitCode !== (nativeEmptyResponse ? 1 : 0) || event.outcome === 'blocked') throw invalid();
-      completed = true;
-    } else if (event.type === 'assistant.message' && event.agentId === undefined) {
-      const data = event.data;
-      if (!isObject(data) || typeof data.content !== 'string' ||
-          (data.toolRequests !== undefined && !Array.isArray(data.toolRequests))) throw invalid();
-      response = { content: data.content, hasTools: Array.isArray(data.toolRequests) && data.toolRequests.length > 0 };
-    }
-  }
-  if (!completed || !response || response.hasTools) throw invalid();
-  if (!response.content.trim())
-    throw new ModelOutputError('empty', 'GitHub Copilot returned an empty model response.', response.content);
-  if (nativeEmptyResponse) throw invalid();
-  return response.content.trim();
+  const content = copilotContent(raw, nativeEmptyResponse ? 1 : 0);
+  if (!content.trim())
+    throw new ModelOutputError('empty', 'GitHub Copilot returned an empty model response.', content);
+  if (nativeEmptyResponse) throw new Error('GitHub Copilot returned an invalid or incomplete JSON event stream.');
+  return content.trim();
 }
 
 export function copilotAdapter(model?: string, invoke: InvokeProvider = invokeProvider): AgentAdapter {
@@ -50,8 +27,9 @@ export function copilotAdapter(model?: string, invoke: InvokeProvider = invokePr
     let nativeEmptyResponse = false;
     try { stream = await invoke('copilot', args, { ...call, prompt }, signal); }
     catch (error) {
-      if (!(error instanceof ProviderExitError) || !error.emptyModelResponse) throw error;
-      stream = error.output;
+      if (!(error instanceof ProviderExitError) || error.exitCode !== 1 || error.stderrTruncated ||
+          error.stderr.trim() !== 'Error: The model returned an empty response, so the run produced no answer.') throw error;
+      stream = error.stdout;
       nativeEmptyResponse = true;
     }
     const raw = responseContent(stream, nativeEmptyResponse);
