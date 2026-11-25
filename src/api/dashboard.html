@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>RCA harness · Run inspector</title>
+  <link rel="stylesheet" href="/dashboard.css">
+  <script type="module" src="/dashboard.js"></script>
+</head>
+<body>
+  <header class="top"><div class="top-inner"><span class="mark" aria-hidden="true"></span><strong>RCA harness</strong><span class="separator" aria-hidden="true"></span><span>Run inspector</span></div></header>
+  <main>
+    <form id="lookup">
+      <label for="run-id">Run ID</label>
+      <div class="field"><input id="run-id" name="id" placeholder="Paste the ID from rca run" autocomplete="off" maxlength="128" spellcheck="false" required><button type="submit">Open run</button></div>
+    </form>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <section id="run" hidden aria-labelledby="issue">
+      <div class="state"><span id="badge"></span><span id="stage"></span></div>
+      <h1 id="issue"></h1>
+      <dl id="metadata" class="metadata"></dl>
+      <div id="outcome"></div>
+      <section id="artifact-panel" hidden><h2>Saved artifacts</h2><div id="artifacts"></div></section>
+    </section>
+    <noscript>Enable JavaScript to inspect a run, or use the local run API.</noscript>
+  </main>
+</body>
+</html>

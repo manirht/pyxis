@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer"
+    },
+    "digest": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "object"
+      ]
+    },
+    "objections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "digest",
+    "decision",
+    "objections"
+  ],
+  "additionalProperties": false
+}

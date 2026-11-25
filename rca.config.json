@@ -1,0 +1,4 @@
+{
+  "roles": { "A": "claude", "B": "codex" },
+  "stageTimeoutMs": 180000
+}

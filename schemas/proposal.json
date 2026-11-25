@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "properties": {
+    "cause": {
+      "type": "string"
+    },
+    "explanation": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "startLine": {
+            "type": "integer"
+          },
+          "endLine": {
+            "type": "integer"
+          },
+          "excerpt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "commit",
+          "path",
+          "startLine",
+          "endLine",
+          "excerpt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "cause",
+    "explanation",
+    "evidence",
+    "gaps"
+  ],
+  "additionalProperties": false
+}

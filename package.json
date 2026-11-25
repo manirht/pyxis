@@ -1,0 +1,17 @@
+{
+  "name": "local-rca-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "bin": { "rca": "src/cli.ts" },
+  "scripts": {
+    "rca": "node src/cli.ts",
+    "test": "node --test \"tests/*.test.ts\"",
+    "check": "tsc --noEmit",
+    "test:live": "node tests/live.ts",
+    "test:permissions": "node tests/live-permissions.ts"
+  },
+  "dependencies": { "ajv": "^8.17.1" },
+  "devDependencies": { "@types/node": "^24.0.0", "typescript": "~5.9.3" }
+}
