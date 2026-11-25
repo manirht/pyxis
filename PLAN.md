@@ -1,5 +1,7 @@
 # RCA harness MVP implementation plan
 
+This document preserves the original design proposal. For the implemented interface, supported adapters, and current run protocol, see the [README](README.md) and [setup guide](SETUP.md).
+
 Build a local TypeScript runner that takes a Git repository, a base ref and a head ref. Two independent agent sessions investigate the change, critique each other's findings and vote on one written root cause analysis (RCA). The runner owns the workflow and the files. A and B are roles that can use any configured adapter.
 
 ## Project and storage locations
