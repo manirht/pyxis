@@ -138,6 +138,64 @@ test('prose-prefixed ballots are regenerated against the exact same immutable pr
   assert.equal((artifacts['attempts/vote-v1/B-1.json'] as { category: string }).category, 'json')
 })
 
+for (const defect of ['empty-objection', 'inconsistent-decision'] as const) {
+  for (const target of ['version', 'digest', 'correct'] as const) {
+    test(`${target === 'correct' ? 'correct-target' : 'wrong-target'} ballots with ${defect} ${target === 'correct' ? 'remain retryable' : 'fail before semantic recovery'} (${target})`, async t => {
+      const s = await setup(t)
+      let attempts = 0
+      const artifacts = await s.execute(async call => {
+        const answer = s.answer(call) as Record<string, unknown>
+        if (call.stage === 'vote' && ++attempts === 1) return {
+          ...answer,
+          ...(target === 'version' ? { version: 99 } : target === 'digest' ? { digest: '0'.repeat(64) } : {}),
+          decision: 'object', objections: defect === 'empty-objection' ? ['   '] : [],
+        }
+        return answer
+      })
+      const metadata = artifacts['attempts/vote-v1/B-1.json'] as { category: string, willRetry: boolean }
+      if (target === 'correct') {
+        assert.equal((artifacts['result.json'] as Result).status, 'finalized')
+        assert.equal(attempts, 2)
+        assert.equal(metadata.category, 'schema')
+        assert.equal(metadata.willRetry, true)
+      } else {
+        const result = artifacts['result.json'] as Result
+        assert.ok(result.status === 'failed')
+        assert.equal(result.stage, 'vote-v1')
+        assert.match(result.error.message, /different proposal/)
+        assert.equal(attempts, 1)
+        assert.equal(metadata.category, 'vote-target')
+        assert.equal(metadata.willRetry, false)
+        assert.equal(artifacts['votes/v1/B.json'], undefined)
+        assert.equal(artifacts['proposals/v2.json'], undefined)
+      }
+    })
+  }
+}
+
+for (const nativeExit of [0, 1]) {
+  test(`structured Copilot session errors are terminal with native exit ${nativeExit}`, async t => {
+    const s = await setup(t)
+    let attempts = 0
+    const artifacts = await s.execute(copilotAdapter(undefined, async (_provider, _args, call, signal) => {
+      if (++attempts !== 1) return events(JSON.stringify(s.answer(call)))
+      const stream = JSON.stringify({ type: 'session.error', data: {
+        errorType: 'authentication', statusCode: 401, message: 'Please sign in to continue. PRIVATE_EVENT',
+      } }) + '\n' + events(nativeExit === 1 ? '' : JSON.stringify(s.answer(call)), nativeExit)
+      return await runProcess({ executable: process.execPath,
+        args: ['-e', 'process.stdout.write(process.argv[1]);process.stderr.write(process.argv[2]);process.exitCode=Number(process.argv[3])',
+          stream, nativeExit === 1 ? fixtures.emptyStderr : '', String(nativeExit)],
+        label: 'GitHub Copilot', cwd: s.f.root, input: '', signal, env: process.env })
+    }))
+    const result = artifacts['result.json'] as Result
+    assert.ok(result.status === 'failed')
+    assert.equal(attempts, 1)
+    assert.match(result.error.message, /session error/)
+    assert.equal(artifacts['attempts/investigate/B-1.json'], undefined)
+    assert.ok(!JSON.stringify(artifacts).includes('PRIVATE_EVENT'))
+  })
+}
+
 test('three rejected responses exhaust recovery and their private diagnostics survive service restart', async t => {
   const s = await setup(t)
   let attempts = 0

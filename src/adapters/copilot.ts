@@ -15,6 +15,8 @@ function responseContent(raw: string, nativeEmptyResponse = false): string {
     if (completed) throw invalid();
     const event = parseOutput(line, 'GitHub Copilot', false);
     if (!isObject(event) || typeof event.type !== 'string') throw invalid();
+    // A structured execution failure must not be mistaken for an empty model answer.
+    if (event.type === 'session.error') throw new Error('GitHub Copilot reported a session error.');
     if (event.type === 'result') {
       if (event.exitCode !== (nativeEmptyResponse ? 1 : 0) || event.outcome === 'blocked') throw invalid();
       completed = true;

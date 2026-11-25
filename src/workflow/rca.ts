@@ -43,14 +43,9 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
           raw = await adapters[role]({ runId: id, role, stage: action, cwd: workspace.cwd,
             evidenceDir: workspace.evidenceDir, prompt, schema, schemaPath }, signal)
           signal.throwIfAborted()
-          const value = parseOutput(action, raw)
+          const target = action === 'vote' ? material as Pick<Vote, 'version' | 'digest'> : undefined
+          const value = parseOutput(action, raw, target)
           if ('evidence' in value) await validateEvidence(run.input, value.evidence, signal)
-          if (action === 'vote') {
-            const target = material as { version: number, digest: string }
-            const vote = value as Vote
-            if (vote.version !== target.version || vote.digest !== target.digest)
-              throw new ModelOutputError('vote-target', 'Vote targets a different proposal', raw, false)
-          }
           signal.throwIfAborted()
           return value
         } catch (e) {

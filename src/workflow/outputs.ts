@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Ajv } from 'ajv'
-import type { AgentStage, StageOutput } from '../types.ts'
+import type { AgentStage, StageOutput, Vote } from '../types.ts'
 import { ModelOutputError } from '../output-error.ts'
 
 const ajv = new Ajv()
@@ -13,10 +13,17 @@ function load(name: string) {
 const proposal = load('proposal')
 export const shapes = { investigate: load('report'), critique: load('critique'), draft: proposal, revise: proposal, vote: load('vote') }
 
-export function parseOutput<S extends AgentStage>(stage: S, raw: unknown): StageOutput[S] {
+export function parseOutput<S extends AgentStage>(stage: S, raw: unknown,
+  target?: Pick<Vote, 'version' | 'digest'>): StageOutput[S] {
   const { validate } = shapes[stage]
   if (!validate(raw)) throw new ModelOutputError('schema', 'Invalid ' + stage + ' output: ' + ajv.errorsText(validate.errors))
   const output = raw as StageOutput[S]
+  // Bind a well-shaped ballot before retryable text/decision validation can mask a stale target.
+  if (stage === 'vote' && target) {
+    const vote = output as Vote
+    if (vote.version !== target.version || vote.digest !== target.digest)
+      throw new ModelOutputError('vote-target', 'Vote targets a different proposal', raw, false)
+  }
   const strings = Object.values(output).flatMap(v => typeof v === 'string' ? [v] :
     Array.isArray(v) ? v.filter((s: unknown) => typeof s === 'string') : [])
   if (strings.some(s => !s.trim())) throw new ModelOutputError('schema', 'Empty text in ' + stage + ' output')
