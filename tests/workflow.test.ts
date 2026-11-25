@@ -180,13 +180,16 @@ test('continued disagreement stops after v2 and preserves both final positions a
 
 for (const scenario of ['stale-vote', 'wrong-digest'] as const) {
   test('a ' + scenario + ' response cannot approve the active proposal', async t => {
-    const { run, result, artifacts } = await runScenario(t, scenario)
+    const { run, result, artifacts, calls } = await runScenario(t, scenario)
     assert.ok(result.status === 'failed', JSON.stringify(result))
     const version = scenario === 'stale-vote' ? 2 : 1
     assert.equal(result.stage, 'vote-v' + version)
     assert.equal(result.error.role, 'B')
     assert.match(result.error.message, /different proposal/i)
     assert.equal(artifacts['votes/v' + version + '/B.json'], undefined)
+    assert.equal(calls.filter(call => call.stage === 'vote' && call.role === 'B' && stageInputs<BallotRequest>(call).version === version).length, 1,
+      'a wrong proposal target must fail closed without a replacement ballot')
+    assert.equal((artifacts[`attempts/vote-v${version}/B-1.json`] as { willRetry: boolean }).willRetry, false)
     assert.equal(run.status, 'failed')
   })
 }

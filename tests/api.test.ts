@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
+import { realpath } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -61,7 +62,7 @@ test('a script can submit from its own working directory and retrieve status and
   })
   assert.deepEqual(JSON.parse(run.stdout), { runId: api.record.id, status: 'queued' })
   assert.equal(run.stderr, '')
-  assert.deepEqual(api.submissions, [{ repo: resolve(tmpdir()), issue }])
+  assert.deepEqual(api.submissions, [{ repo: await realpath(tmpdir()), issue }])
   api.record.status = 'running'
   api.record.stage = 'investigate'
   api.record.artifacts = Object.keys(api.saved)

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { AgentCall } from '../types.ts';
+import { ModelOutputError } from '../output-error.ts';
 import { prepareCopilotLaunch } from './copilot-home.ts';
 
 type Provider = 'claude' | 'codex' | 'copilot';
@@ -114,6 +115,16 @@ export interface ProcessRequest {
   env: NodeJS.ProcessEnv;
 }
 
+export class ProviderExitError extends Error {
+  output: string;
+  emptyModelResponse: boolean;
+  constructor(message: string, output: string, emptyModelResponse: boolean) {
+    super(message);
+    this.output = output;
+    this.emptyModelResponse = emptyModelResponse;
+  }
+}
+
 export function runProcess(request: ProcessRequest): Promise<string> {
   const { executable, args, label, cwd, input, signal, env } = request;
   if (signal.aborted) return Promise.reject(cancellation(label, signal));
@@ -177,7 +188,12 @@ export function runProcess(request: ProcessRequest): Promise<string> {
       const output = Buffer.concat(chunks).toString('utf8');
       if (code !== 0) {
         const status = code === null ? `on signal ${exitSignal}` : `with exit code ${code}`;
-        return reject(new Error(`${label} stopped ${status}.${failureDetail(stderr.toString('utf8') + '\n' + output)}`));
+        const diagnostic = stderr.toString('utf8').trim();
+        const detail = failureDetail(diagnostic + '\n' + output);
+        const emptyModelResponse = label === 'GitHub Copilot' && code === 1 &&
+          diagnostic === 'Error: The model returned an empty response, so the run produced no answer.' && !detail;
+        return reject(new ProviderExitError(`${label} stopped ${status}.${detail}`,
+          output, emptyModelResponse));
       }
       if (stdinFailed) return reject(new Error(`${label} closed its input before receiving the prompt.`));
       resolve(output);
@@ -232,10 +248,12 @@ export const invokeProvider: InvokeProvider = async (provider, args, call, signa
   }
 };
 
-export function parseOutput(raw: string, label: string): unknown {
+export function parseOutput(raw: string, label: string, modelAnswer = true): unknown {
+  if (modelAnswer && !raw.trim()) throw new ModelOutputError('empty', `${label} returned an empty model response.`, raw);
   try {
     return JSON.parse(raw);
   } catch {
+    if (modelAnswer) throw new ModelOutputError('json', `${label} returned an invalid JSON response. Output only one JSON object, without prose.`, raw);
     throw new Error(`${label} returned an invalid JSON response.`);
   }
 }

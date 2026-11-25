@@ -7,7 +7,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { PinnedInput, Result, RunRecord } from './types.ts'
 
 const roles = ['A', 'B']
+const attemptArtifacts = ['investigate', 'critique', 'draft', 'revise', 'vote-v1', 'vote-v2']
+  .flatMap(stage => roles.flatMap(role => [1, 2, 3].map(attempt => `attempts/${stage}/${role}-${attempt}.json`)))
 const knownArtifacts = [
+  ...attemptArtifacts,
   ...roles.map(role => `reports/${role}.json`),
   'critiques/A-on-B.json', 'critiques/B-on-A.json',
   ...[1, 2].flatMap(v => [`proposals/v${v}.json`, ...roles.map(role => `votes/v${v}/${role}.json`)]),
@@ -144,6 +147,21 @@ export class RunStore {
       await this.writeArtifact(run, name, bytes)
       const match = /^proposals\/(v[12])\.json$/.exec(name)
       if (match) run.proposalDigests[match[1]] = digestOf(bytes)
+    })
+  }
+
+  // Rejected model content stays in owner-only diagnostics, outside the API's
+  // artifact allowlist. Publish only generated validation feedback and metadata.
+  recordRejection(id: string, name: string, metadata: unknown, response: unknown) {
+    if (!attemptArtifacts.includes(name)) throw new Error('Unknown attempt artifact')
+    return this.change(id, async run => {
+      if (run.status !== 'running') throw new Error('Run has stopped accepting artifacts')
+      const privateName = name.replace(/^attempts\//, 'diagnostics/')
+      const file = join(this.directory(id), privateName)
+      try { await stat(file); throw new Error('Attempt diagnostics already saved') }
+      catch (e) { if (!isMissing(e)) throw e }
+      await atomicWrite(file, jsonBytes({ feedback: metadata, response }))
+      await this.writeArtifact(run, name, jsonBytes(metadata))
     })
   }
 

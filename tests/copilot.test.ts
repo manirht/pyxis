@@ -20,6 +20,18 @@ const call: AgentCall = {
 }
 const signal = new AbortController().signal
 const report = { hypothesis: 'The unit conversion is missing.', evidence: [], gaps: ['Timing trace.'] }
+// Copilot 1.0.115 JSONL: assistant content is an event; result carries status only.
+const message = (content: string, extra: Record<string, unknown> = {}) => ({
+  type: 'assistant.message', id: 'message-event', timestamp: '2026-11-25T00:00:00.000Z', parentId: 'previous-event',
+  data: { messageId: 'message', originatingMessageId: 'prompt', model: 'fixture-model', providerId: 'copilot',
+    content, toolRequests: [], interactionId: 'interaction', turnId: '1', rte: true, apiCallId: 'model-call' },
+  ...extra,
+})
+const completed = { type: 'result', timestamp: '2026-11-25T00:00:01.000Z', sessionId: 'session', exitCode: 0,
+  usage: { premiumRequests: 1, totalApiDurationMs: 100, sessionDurationMs: 200,
+    codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: [] } } }
+const jsonl = (...events: unknown[]) => events.map(event => JSON.stringify(event)).join('\n') + '\n'
+const response = (content = JSON.stringify(report)) => jsonl(message(content), completed)
 
 test('Copilot sends the stage prompt and schema on stdin and limits the CLI to read-only evidence tools', async () => {
   const adapter = copilotAdapter('fixture-model', async (provider, args, actual, receivedSignal) => {
@@ -42,11 +54,11 @@ test('Copilot sends the stage prompt and schema on stdin and limits the CLI to r
       return args[index + 1]
     }
     assert.equal(value('--model'), 'fixture-model')
-    assert.equal(value('--output-format'), 'text')
+    assert.equal(value('--output-format'), 'json')
     assert.equal(value('--stream'), 'off')
     assert.deepEqual(value('--available-tools').split(',').sort(), ['glob', 'grep', 'view'])
     assert.deepEqual(value('--deny-tool').split(',').sort(), ['shell', 'write'])
-    return JSON.stringify(report)
+    return response()
   })
   assert.deepEqual(parseOutput('investigate', await adapter(call, signal)), report)
 })
@@ -54,7 +66,7 @@ test('Copilot sends the stage prompt and schema on stdin and limits the CLI to r
 test('Copilot accepts a single fenced JSON object and preserves the default model when no override is set', async () => {
   const adapter = copilotAdapter(undefined, async (_provider, args) => {
     assert.ok(!args.includes('--model'))
-    return '```json\n' + JSON.stringify(report) + '\n```'
+    return response('```json\n' + JSON.stringify(report) + '\n```')
   })
   assert.deepEqual(await adapter(call, signal), report)
 })
@@ -68,6 +80,39 @@ test('Copilot rejects malformed, ambiguous and non-object output without publish
       assert.ok(!error.message.includes('sensitive-provider-diagnostic'))
       return true
     })
+  }
+})
+
+test('Copilot reads the final root assistant event without text wrapping or tool and subagent commentary', async () => {
+  const expected = { ...report, gaps: ['A long JSON string remains intact even when it exceeds a terminal width and contains an escaped newline.\nThe next line stays part of the string.'] }
+  const requestedTools = { ...message('Reading the source.'), data: { content: 'Reading the source.', toolRequests: [{ toolCallId: 'read', name: 'view', arguments: { path: 'file.ts' } }] } }
+  const raw = jsonl(
+    { type: 'session.start', id: 'start', timestamp: '2026-11-25T00:00:00.000Z', parentId: null, data: { sessionId: 'session' } },
+    message('Intermediate commentary.'), requestedTools,
+    message(JSON.stringify(expected)),
+    message('{"wrong":"subagent response"}', { agentId: 'child-agent' }), completed,
+  )
+  const adapter = copilotAdapter(undefined, async () => raw)
+  assert.deepEqual(await adapter(call, signal), expected)
+})
+
+test('Copilot requires one successful terminal result and a final root response with no requested tools', async () => {
+  const final = message(JSON.stringify(report))
+  const toolOnly = { ...final, data: { ...final.data, toolRequests: [{ toolCallId: 'read', name: 'view', arguments: { path: 'file.ts' } }] } }
+  for (const raw of [
+    jsonl(final), jsonl(final) + '{"type":"result"',
+    jsonl(final, { ...completed, exitCode: 1 }),
+    jsonl(final, { ...completed, outcome: 'blocked' }),
+    jsonl(final, completed, completed), jsonl(final, completed, final),
+    jsonl(completed), jsonl(message(JSON.stringify(report), { agentId: 'child' }), completed),
+    jsonl(final, toolOnly, completed), jsonl(message(''), completed),
+    jsonl({ ...final, data: { content: 1 } }, completed),
+    jsonl({ ...final, data: { content: '{}', toolRequests: 'view' } }, completed),
+    jsonl(message('{"hypothesis":"broken\nstring"}'), completed),
+    jsonl(message('{}\n{}'), completed), jsonl(message('null'), completed),
+    jsonl(final, null, completed), jsonl(final, { type: 1 }, completed),
+  ]) {
+    await assert.rejects(copilotAdapter(undefined, async () => raw)(call, signal), /Copilot/i)
   }
 })
 
