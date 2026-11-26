@@ -24,7 +24,7 @@ async function terminal(service: Awaited<ReturnType<typeof openService>>, id: st
   throw new Error('Run did not finish')
 }
 
-test('running snapshots persist full workflow prompts passed to adapters and complete call audits while accepted history stays public', async t => {
+test('running snapshots retain call audits without recording prompts while accepted history stays public', async t => {
   const f = await makeFixture()
   t.after(f.cleanup)
   const runsDir = join(f.root, 'runs')
@@ -60,18 +60,11 @@ test('running snapshots persist full workflow prompts passed to adapters and com
   assert.ok(runningReport?.includes(f.head))
   assert.ok(runningReport?.includes(f.base))
   assert.deepEqual(await service.artifacts(run.id), {})
-  for (const call of calls) {
-    const file = join(runsDir, run.id, 'prompts/investigate/' + call.role + '-1.txt')
-    if (process.platform === 'win32') await assert.rejects(readFile(file), { code: 'ENOENT' })
-    else {
-      assert.equal(await readFile(file, 'utf8'), call.prompt)
-      assert.equal((await stat(file)).mode & 0o777, 0o600)
-      assert.equal((await stat(join(runsDir, run.id, 'prompts'))).mode & 0o777, 0o700)
-    }
-  }
-  release()
+  try { await assert.rejects(stat(join(runsDir, run.id, 'prompts')), { code: 'ENOENT' }) }
+  finally { release() }
   const finished = await terminal(service, run.id)
   assert.equal(finished.status, 'finalized')
+  await assert.rejects(stat(join(runsDir, run.id, 'prompts')), { code: 'ENOENT' })
   const report = await (await fetch(api.origin + '/runs/' + run.id + '/report')).text()
   for (const text of ['HYPOTHESIS_A', 'HYPOTHESIS_B', 'GAP_A', 'GAP_B', 'ASSESSMENT_A', 'ASSESSMENT_B',
     'CAUSE', 'FINAL_EXPLANATION', 'FINAL_GAP', f.evidence.excerpt, f.head, f.base, finished.proposalDigests.v1!]) {
@@ -106,7 +99,7 @@ test('running snapshots persist full workflow prompts passed to adapters and com
   assert.equal(await readFile(join(runsDir, run.id, 'REPORT.md'), 'utf8'), report)
 })
 
-test('rejected output and retry prompts stay private across terminal failure and restart', async t => {
+test('rejected output stays private without recording retry prompts across terminal failure and restart', async t => {
   const f = await makeFixture()
   t.after(f.cleanup)
   const runsDir = join(f.root, 'runs')
@@ -136,9 +129,7 @@ test('rejected output and retry prompts stay private across terminal failure and
   assert.ok(report?.includes('attempts/investigate/B-3.json'))
   assert.ok(!report?.includes(privateText))
   assert.ok(!JSON.stringify(artifacts).includes(privateText))
-  const privatePrompt = join(runsDir, run.id, 'prompts/investigate/B-2.txt')
-  if (process.platform === 'win32') await assert.rejects(readFile(privatePrompt), { code: 'ENOENT' })
-  else assert.ok((await readFile(privatePrompt, 'utf8')).includes(privateText))
+  await assert.rejects(stat(join(runsDir, run.id, 'prompts')), { code: 'ENOENT' })
   const audit = await eventsAt(join(runsDir, run.id, 'events.jsonl'))
   assert.equal(audit.filter(event => event.kind === 'call-finished' && event.role === 'B' && event.status === 'rejected').length, 3)
   assert.ok(!JSON.stringify(audit).includes(privateText))
@@ -191,11 +182,10 @@ test('recent history is bounded, sorted and compatible with legacy terminal reco
 })
 
 
-test('full workflow prompts use the same fail-closed platform policy as raw rejection diagnostics', async t => {
+test('call audits omit prompt files on every platform and preserve raw rejection privacy', async t => {
   const f = await makeFixture()
   t.after(f.cleanup)
   const input = await pinInput({ repo: f.repo, issue })
-  const privatePrompt = 'PRIVATE_FULL_SUBMITTED_PROMPT'
   const privateOutput = 'PRIVATE_RAW_REJECTED_RESPONSE'
   for (const platform of ['win32', 'linux'] as const) {
     const root = join(f.root, platform)
@@ -203,7 +193,7 @@ test('full workflow prompts use the same fail-closed platform policy as raw reje
     const store = new RunStore(root, platform)
     const run = await store.create(input, agents)
     await store.change(run.id, value => { value.status = 'running'; value.stage = 'investigate' })
-    const call = await store.startCall(run.id, { stage: 'investigate', action: 'investigate', role: 'A', attempt: 1 }, privatePrompt)
+    const call = await store.startCall(run.id, { stage: 'investigate', action: 'investigate', role: 'A', attempt: 1 })
     await store.finishCall(run.id, call, 'rejected', 'json')
     await store.recordRejection(run.id, 'attempts/investigate/A-1.json', {
       stage: 'investigate', role: 'A', attempt: 1, category: 'json', message: 'Invalid JSON response.', willRetry: false,
@@ -212,17 +202,16 @@ test('full workflow prompts use the same fail-closed platform policy as raw reje
     await store.finish(run.id, { status: 'failed', stage: 'investigate', error: { message: 'Fixture stopped' },
       artifacts: (await store.get(run.id))!.artifacts })
     const retain = process.platform !== 'win32' && platform !== 'win32'
-    for (const file of ['prompts/investigate/A-1.txt', 'diagnostics/investigate/A-1.json']) {
-      if (retain) assert.equal((await stat(join(root, run.id, file))).mode & 0o777, 0o600)
-      else await assert.rejects(readFile(join(root, run.id, file)), { code: 'ENOENT' })
-    }
+    await assert.rejects(stat(join(root, run.id, 'prompts')), { code: 'ENOENT' })
+    const diagnostic = join(root, run.id, 'diagnostics/investigate/A-1.json')
+    if (retain) assert.equal((await stat(diagnostic)).mode & 0o777, 0o600)
+    else await assert.rejects(readFile(diagnostic), { code: 'ENOENT' })
     const publicData = JSON.stringify(await store.artifacts(run.id)) + await store.report(run.id)
     assert.ok(publicData.includes('Safe accepted output'))
-    assert.ok(!publicData.includes(privatePrompt))
     assert.ok(!publicData.includes(privateOutput))
     const audit = await eventsAt(join(root, run.id, 'events.jsonl'))
     assert.equal(audit.filter(event => event.kind === 'call-finished').length, 1)
-    assert.ok(!JSON.stringify(audit).includes(privatePrompt))
+    assert.ok(audit.every(event => !Object.hasOwn(event, 'prompt')))
     assert.ok(!JSON.stringify(audit).includes(privateOutput))
   }
 })
@@ -257,7 +246,7 @@ test('failed derived report and audit writes do not reject committed state or hi
     await rm(file)
     await mkdir(file)
   }
-  const call = await store.startCall(run.id, { stage: 'investigate', action: 'investigate', role: 'A', attempt: 1 }, 'Private workflow input')
+  const call = await store.startCall(run.id, { stage: 'investigate', action: 'investigate', role: 'A', attempt: 1 })
   await store.finishCall(run.id, call, 'rejected', 'schema')
   await store.recordRejection(run.id, 'attempts/investigate/A-1.json', { category: 'schema', willRetry: false }, 'Rejected input')
   await store.publish(run.id, 'reports/B.json', { hypothesis: 'Accepted peer report', evidence: [], gaps: [] })

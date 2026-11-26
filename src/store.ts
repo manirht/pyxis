@@ -185,23 +185,13 @@ export class RunStore {
     })
   }
 
-  startCall(id: string, details: { stage: string, action: string, role: Role, attempt: number }, prompt: string): Promise<CallAudit> {
+  startCall(id: string, details: { stage: string, action: string, role: Role, attempt: number }): Promise<CallAudit> {
     if (!attemptArtifacts.includes(`attempts/${details.stage}/${details.role}-${details.attempt}.json`)) {
       return Promise.reject(new Error('Unknown call attempt'))
     }
     return this.serialized(async () => {
       const run = await this.get(id)
       if (!run || run.status !== 'running') throw new Error('Run has stopped accepting calls')
-      // Save the full workflow prompt passed to the adapter, before adapter schema
-      // instructions and launcher pinned-checkout locations are added. This is
-      // not exact provider stdin or a full native CLI transcript. Like raw
-      // diagnostics, it needs POSIX owner-only permissions; omit it on Windows.
-      if (this.retainRawDiagnostics) {
-        const file = join(this.directory(id), `prompts/${details.stage}/${details.role}-${details.attempt}.txt`)
-        try { await stat(file); throw new Error('Call prompt already saved') }
-        catch (e) { if (!isMissing(e)) throw e }
-        await atomicWrite(file, prompt)
-      }
       const call: CallAudit = { ...details, provider: run.agents[details.role].adapter,
         model: run.agents[details.role].model, startedAt: new Date().toISOString() }
       await this.appendEvent(id, { ...call, timestamp: call.startedAt, kind: 'call-started', status: 'running' })

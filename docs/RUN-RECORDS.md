@@ -20,13 +20,12 @@ runs/                              # ignored; local and potentially sensitive
     votes/v1/A.json, B.json        # exact-version and digest-bound ballots
     result.json                    # finalized, unresolved, or failed outcome
     attempts/<stage>/...json       # safe validation feedback and retry metadata
-    prompts/<stage>/...txt         # private workflow prompts; POSIX only
     diagnostics/<stage>/...json    # private rejected responses; POSIX only
   validation/<date>-<purpose>/     # local tests, screenshots and supplementary checks
   archive/<date>/                 # original imported evidence snapshots
 ```
 
-Each stage publishes only the files it reaches. Failed runs can retain useful reports or proposals without votes. Older imported runs do not gain prompts or events that were never recorded. `REPORT.md` is a generated reading view; the accepted JSON artifacts and proposal bytes remain the authoritative evidence. The report is refreshed as a run changes and when requested through the report endpoint. Terminal history is not rewritten at startup. Report refreshes and event appends are best effort: failures log a warning without rejecting an already saved run transition. An explicit report request can fail for that one run; accepted JSON remains authoritative.
+Each stage publishes only the files it reaches. Failed runs can retain useful reports or proposals without votes. Older imported runs do not gain events that were never recorded. `REPORT.md` is a generated reading view; the accepted JSON artifacts and proposal bytes remain the authoritative evidence. The report is refreshed as a run changes and when requested through the report endpoint. Terminal history is not rewritten at startup. Report refreshes and event appends are best effort: failures log a warning without rejecting an already saved run transition. An explicit report request can fail for that one run; accepted JSON remains authoritative.
 
 `run.json` identifies the actual role bindings. A and B are workflow roles; consult their `adapter` and `model` fields instead of assuming which provider filled a role. A null model records that the provider’s default was requested; it does not establish the exact model ID used.
 
@@ -41,7 +40,7 @@ The accepted history follows this sequence:
 | Outcome | `result.json` | Final agreement, unresolved positions, or the failure stage and error. |
 | Validation retries | `attempts/` | Rejection categories, feedback, and retry decisions. |
 
-These records capture accepted structured model outputs. They do not expose or reconstruct the providers’ hidden internal reasoning. `events.jsonl` records orchestration facts such as lifecycle transitions and provider-call starts/finishes; it is not a full native CLI transcript. Private prompt files preserve the full workflow prompt passed to the adapter for each attempt. Adapters can add output-schema instructions, and the launcher prepends pinned-checkout locations before invoking the native CLI. The saved workflow prompt is therefore not exact provider stdin or a full native CLI transcript. Routine run storage does not collect native CLI stderr, credentials, or private provider session dumps.
+These records capture accepted structured model outputs. They do not expose or reconstruct the providers’ hidden internal reasoning. `events.jsonl` records orchestration facts such as lifecycle transitions and provider-call starts/finishes; it is not a full native CLI transcript. Workflow prompts are not recorded. Routine run storage does not collect native CLI stderr, credentials, or private provider session dumps.
 
 ## API access
 
@@ -75,9 +74,9 @@ A custom location outside this repository needs its own ignore rule and appropri
 
 ## Keep and share records carefully
 
-Run records can contain issue text and source code. On POSIX, private workflow prompts and rejected diagnostics use owner-only directories (mode `0700`) and files (mode `0600`). They stay out of the allowlisted artifacts API and generated reports. Accepted reports, proposals, votes, safe attempt metadata, and lifecycle/call metadata remain available on every platform.
+Run records can contain issue text and source code. On POSIX, rejected diagnostics use owner-only directories (mode `0700`) and files (mode `0600`). They stay out of the allowlisted artifacts API and generated reports. Legacy prompt files are preserved locally and remain excluded from both. Accepted reports, proposals, votes, safe attempt metadata, and lifecycle/call metadata remain available on every platform.
 
-On Windows, new workflow prompts and rejected responses are omitted because POSIX file modes do not restrict inherited Windows ACLs. No opt-in bypass enables raw persistence there. These Windows omissions do not remove accepted review history or safe retry metadata.
+On Windows, new rejected responses are omitted because POSIX file modes do not restrict inherited Windows ACLs. No opt-in bypass enables raw persistence there. This omission does not remove accepted review history or safe retry metadata.
 
 Save future supplementary validation under `runs/validation/<date>-<purpose>/` and add a short `REPORT.md` describing what ran, the exact revision, observed results, and limitations. Keep copied historical snapshots under `runs/archive/` and link them from `runs/START-HERE.md`. Use relative links within the local evidence tree. Never force-add this data to Git. Review any report or artifact before sharing it outside the machine; ignore rules and file modes do not sanitize its contents.
 

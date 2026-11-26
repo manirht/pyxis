@@ -42,7 +42,7 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
         let audit: CallAudit | undefined
         try {
           const prompt = makePrompt(run, role, action, withContext ? workspace.context : '', material, feedback)
-          audit = await store.startCall(id, { stage, action, role, attempt }, prompt)
+          audit = await store.startCall(id, { stage, action, role, attempt })
           signal.throwIfAborted()
           raw = await adapters[role]({ runId: id, role, stage: action, cwd: workspace.cwd,
             evidenceDir: workspace.evidenceDir, prompt, schema, schemaPath }, signal)

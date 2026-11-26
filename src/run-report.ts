@@ -125,6 +125,6 @@ export function renderRunReport(run: RunRecord, artifacts: Record<string, unknow
     '- `REPORT.md` — this regenerated readable snapshot.',
     '- `events.jsonl` — local lifecycle and call timing audit, when recorded.', '')
   for (const name of Object.keys(artifacts).sort()) lines.push(`- ${code(name)}`)
-  lines.push('', 'The report and artifacts API exclude private workflow prompts and rejected response bodies. Older imported runs may have no call timing audit or workflow prompts. Prompt files preserve the full workflow prompt passed to the adapter; adapters can add output-schema instructions, and the launcher prepends pinned-checkout locations. Saved prompts are not exact provider stdin or full native CLI transcripts. Full workflow prompts and raw rejected responses are retained only on POSIX; Windows omits both because POSIX modes cannot enforce private Windows ACLs.', '')
+  lines.push('', 'Workflow prompts are not recorded. The report and artifacts API exclude legacy private prompts and rejected response bodies. Older imported runs may have no call timing audit. Raw rejected responses are retained only on POSIX; Windows omits them because POSIX modes cannot enforce private Windows ACLs.', '')
   return lines.join('\n')
 }

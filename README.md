@@ -80,7 +80,7 @@ $artifacts = Invoke-RestMethod "$url/runs/$($run.runId)/artifacts"
 $artifacts.'result.json' | ConvertTo-Json -Depth 12
 ```
 
-Each run has a durable folder under `runs/<run-id>/` in the harness installation. `REPORT.md` presents the accepted review history, and `events.jsonl` records lifecycle and provider-call metadata. On POSIX, private `prompts/<stage>/<role>-<attempt>.txt` files preserve the full workflow prompt passed to the adapter for each attempt. Adapters can add output-schema instructions, and the launcher prepends pinned-checkout locations before invoking the native CLI. These files are not exact provider stdin or full native CLI transcripts. New workflow prompt files are omitted on Windows under the same privacy policy as raw diagnostics.
+Each run has a durable folder under `runs/<run-id>/` in the harness installation. `REPORT.md` presents the accepted review history, and `events.jsonl` records lifecycle and provider-call metadata. Workflow prompts are not recorded.
 
 `run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the accepted review history. `attempts/<stage>/<role>-<attempt>.json` records safe rejection categories, validation feedback, and whether another attempt was planned on every platform.
 
@@ -88,7 +88,7 @@ On POSIX, `diagnostics/` retains rejected model responses in owner-only files (m
 
 Both safe rejection records and accepted outputs survive restart. Active work is marked interrupted on restart, rather than replaying a partially completed stage. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
 
-These records contain the providers’ accepted structured outputs, not their hidden internal reasoning. Private prompts and rejected diagnostics stay out of the public artifacts API and generated reports. Routine run storage does not capture native CLI stderr or private provider session dumps. Keep future validation logs, screenshots, and detailed execution evidence under the ignored `runs/` folder as well; [the run record guide](docs/RUN-RECORDS.md) explains the layout and sharing boundaries.
+These records contain the providers’ accepted structured outputs, not their hidden internal reasoning. Legacy private prompts and rejected diagnostics stay out of the public artifacts API and generated reports. Routine run storage does not capture native CLI stderr or private provider session dumps. Keep future validation logs, screenshots, and detailed execution evidence under the ignored `runs/` folder as well; [the run record guide](docs/RUN-RECORDS.md) explains the layout and sharing boundaries.
 
 ## Code map for contributors and AI agents
 
