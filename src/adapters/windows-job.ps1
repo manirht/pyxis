@@ -1,6 +1,7 @@
 # Start the native CLI suspended, attach it to a kernel job, then release it.
 # Closing the supervisor kills the entire job even if a parent already exited.
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 try {
     Add-Type -TypeDefinition @'
 using System;

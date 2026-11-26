@@ -1,0 +1,9 @@
+{
+  "wrongCitation": {
+    "startLine": 65,
+    "endLine": 67,
+    "excerpt": "    lo, hi = -0.99, 10.0\n    if npv(lo, flows) * npv(hi, flows) > 0:\n        raise ValueError(\"DOMAIN: irr did not converge\")"
+  },
+  "prosePrefix": "The proposal is correct and the evidence supports approval.\n",
+  "emptyStderr": "Error: The model returned an empty response, so the run produced no answer."
+}

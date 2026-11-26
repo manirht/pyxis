@@ -72,6 +72,13 @@ test('restart reconciles a surviving report, marks its interrupted stage and rem
   await mkdir(directory)
   const report = { hypothesis: 'Seconds and milliseconds are compared directly.', evidence: [f.evidence], gaps: [] }
   await writeFile(join(directory, 'A.json'), jsonBytes(report))
+  const attempts = join(runsDir, run.id, 'attempts/investigate')
+  await mkdir(attempts, { recursive: true })
+  const rejection = { stage: 'investigate', role: 'B', attempt: 1, category: 'json', message: 'Invalid JSON response.', willRetry: true }
+  await writeFile(join(attempts, 'B-1.json'), jsonBytes(rejection))
+  const diagnostics = join(runsDir, run.id, 'diagnostics/investigate')
+  await mkdir(diagnostics, { recursive: true })
+  await writeFile(join(diagnostics, 'B-1.json'), jsonBytes({ response: 'PRIVATE_REJECTED_CONTENT', feedback: rejection }))
   const service = await openService({ runsDir, tempRoot: join(f.root, 'new-worktrees') })
   try {
     const state = await service.get(run.id)
@@ -81,7 +88,10 @@ test('restart reconciles a surviving report, marks its interrupted stage and rem
     assert.match(state?.error?.message ?? '', /interrupted/)
     const artifacts = await service.artifacts(run.id)
     assert.deepEqual(artifacts['reports/A.json'], report)
-    assert.deepEqual((artifacts['result.json'] as { artifacts: string[] }).artifacts, ['reports/A.json'])
+    assert.deepEqual(artifacts['attempts/investigate/B-1.json'], rejection)
+    assert.deepEqual((artifacts['result.json'] as { artifacts: string[] }).artifacts, ['attempts/investigate/B-1.json', 'reports/A.json'])
+    assert.ok(!JSON.stringify(artifacts).includes('PRIVATE_REJECTED_CONTENT'))
+    assert.equal(JSON.parse(await readFile(join(diagnostics, 'B-1.json'), 'utf8')).response, 'PRIVATE_REJECTED_CONTENT')
     await assert.rejects(readFile(join(tempRoot, run.id, 'owner.json')), { code: 'ENOENT' })
   } finally { await service.close() }
 })

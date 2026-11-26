@@ -47,7 +47,11 @@ flowchart TD
     prep -.->|Failure path at any stage| error["Error or timeout during execution"] --> failed["Failed: stage, error and saved artifacts"]
 ```
 
-A citation records a full commit ID, repository-relative path, inclusive line range, and excerpt. The runner checks the excerpt against the Git object. Reviewers judge whether that code explains the symptom. A vote naming the wrong proposal version or digest fails validation. First-round agreement takes seven agent-stage calls. A revision and revote bring the total to ten.
+A citation records a full commit ID, repository-relative path, inclusive line range, and excerpt. The runner checks the excerpt against the Git object. Reviewers judge whether that code explains the symptom. A vote naming the wrong proposal version or digest fails immediately. First-round agreement takes seven agent-stage calls when every answer passes validation. A revision and revote bring the total to ten, before any validation retries.
+
+Wrong-target ballots are treated conservatively as provenance incidents, rather than asking a new attempt to retarget its vote. This is a policy choice: every accepted ballot would still need to pass the same immutable version/digest checks after a retry. Recognizable target mismatches are checked before full schema validation, so an extra field cannot change that terminal outcome. Known rejected answers are recorded even if cancellation has already arrived, but cancellation prevents any further attempt.
+
+Each role gets at most three attempts for a stage. Invalid model JSON, schema errors, empty model answers, and source-citation errors receive validation feedback and a fresh CLI call with the same pinned inputs. A completed successful Claude result with no structured answer follows this recovery path; malformed envelopes and provider error results remain terminal. A retry sees a bounded, quoted preview of its own rejected answer; the independent investigators never see each other's first report. Rejected answers are never repaired or published as accepted output. The original stage deadline covers all attempts and both peers; a recoverable error does not cancel the peer. Wrong proposal targets, cancellation, authentication failures, unsupported CLIs, corrupt provider event streams, and storage failures stop the stage. Copilot's native exit-1 empty-answer diagnostic is retryable only when its complete JSON event stream confirms an empty final root answer and failed terminal result. Native stderr supplies text error diagnostics; reviewer and tool text cannot classify an execution failure. Structured session errors remain terminal.
 
 ## Read results from a script
 
@@ -68,7 +72,7 @@ $artifacts = Invoke-RestMethod "$url/runs/$($run.runId)/artifacts"
 $artifacts.'result.json' | ConvertTo-Json -Depth 12
 ```
 
-Each run has a durable folder under `runs/<run-id>/` in the harness installation. `run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the review history. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
+Each run has a durable folder under `runs/<run-id>/` in the harness installation. `run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the accepted review history. `attempts/<stage>/<role>-<attempt>.json` records safe rejection categories, validation feedback, and whether another attempt was planned on every platform. On POSIX, `diagnostics/` retains rejected model responses in owner-only files (mode 0600), excluded from the artifacts API. On Windows, raw rejected responses are not saved: POSIX modes do not restrict inherited Windows ACLs, and no opt-in bypass is provided. Both safe rejection records and accepted outputs survive restart. Active work is marked interrupted on restart, rather than replaying a partially completed stage. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
 
 ## Code map for contributors and AI agents
 

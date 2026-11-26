@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { AgentCall } from '../types.ts';
+import { ModelOutputError } from '../output-error.ts';
 import { prepareCopilotLaunch } from './copilot-home.ts';
 
 type Provider = 'claude' | 'codex' | 'copilot';
@@ -112,6 +113,27 @@ export interface ProcessRequest {
   input: string;
   signal: AbortSignal;
   env: NodeJS.ProcessEnv;
+  // A consumer owns protocol parsing and output limits; streamed bytes are not retained.
+  onStdout?: (chunk: Buffer) => void;
+}
+
+export class ProviderExitError extends Error {
+  readonly exitCode: number | null;
+  readonly stderrTruncated: boolean;
+  #stdout: string;
+  #stderr: Buffer;
+  constructor(message: string, exitCode: number | null, stdout: string, stderr: Buffer, stderrTruncated = false) {
+    super(message);
+    this.exitCode = exitCode;
+    this.#stdout = stdout;
+    this.#stderr = Buffer.from(stderr.subarray(-diagnosticBytes));
+    this.stderrTruncated = stderrTruncated || stderr.length > diagnosticBytes;
+  }
+
+  // Provider diagnostics are available only to adapter logic. Private fields
+  // and prototype getters keep source and credentials out of error serialization.
+  get stdout(): string { return this.#stdout; }
+  get stderr(): string { return this.#stderr.toString('utf8'); }
 }
 
 export function runProcess(request: ProcessRequest): Promise<string> {
@@ -135,6 +157,7 @@ export function runProcess(request: ProcessRequest): Promise<string> {
     const chunks: Buffer[] = [];
     let bytes = 0;
     let stderr = Buffer.alloc(0);
+    let stderrBytes = 0;
     let stdinFailed = false;
     let failure: Error | undefined;
     let stopping: Promise<void> | undefined;
@@ -158,11 +181,17 @@ export function runProcess(request: ProcessRequest): Promise<string> {
     signal.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (chunk: Buffer) => {
       if (failure) return;
+      if (request.onStdout) {
+        try { request.onStdout(chunk); }
+        catch (error) { stop(error as Error); }
+        return;
+      }
       bytes += chunk.length;
       if (bytes > maxOutputBytes) stop(new Error(`${label} response exceeded the 2 MiB output limit.`));
       else chunks.push(chunk);
     });
     child.stderr.on('data', (chunk: Buffer) => {
+      stderrBytes += chunk.length;
       const tail = Buffer.concat([stderr, chunk.subarray(-diagnosticBytes)]);
       stderr = tail.subarray(-diagnosticBytes);
     });
@@ -177,7 +206,10 @@ export function runProcess(request: ProcessRequest): Promise<string> {
       const output = Buffer.concat(chunks).toString('utf8');
       if (code !== 0) {
         const status = code === null ? `on signal ${exitSignal}` : `with exit code ${code}`;
-        return reject(new Error(`${label} stopped ${status}.${failureDetail(stderr.toString('utf8') + '\n' + output)}`));
+        const diagnostic = stderr.toString('utf8').trim();
+        const detail = failureDetail(diagnostic);
+        return reject(new ProviderExitError(`${label} stopped ${status}.${detail}`,
+          code, output, stderr, stderrBytes > diagnosticBytes));
       }
       if (stdinFailed) return reject(new Error(`${label} closed its input before receiving the prompt.`));
       resolve(output);
@@ -186,9 +218,23 @@ export function runProcess(request: ProcessRequest): Promise<string> {
   });
 }
 
-export type InvokeProvider = (provider: Provider, args: string[], call: AgentCall, signal: AbortSignal) => Promise<string>;
+export type InvokeProvider = (provider: Provider, args: string[], call: AgentCall, signal: AbortSignal,
+  onStdout?: (chunk: Buffer) => void) => Promise<string>;
 
 let copilotCapability: { executable: string; modified: number; exportFlag: string } | undefined;
+
+export function checkCopilotVersion(output: string): void {
+  // Fail closed on prereleases, unknown banners and incidental version numbers.
+  // The bundled CLI prints a period and the fixed update hint after its version.
+  const match = /^(?:GitHub Copilot CLI )?v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.?(?:\r?\nRun 'copilot update' to check for updates\.)?$/.exec(output.trim());
+  const version = match?.slice(1).map(Number);
+  if (!version || !version.every(Number.isSafeInteger)) {
+    throw new Error('GitHub Copilot CLI version output was not recognized. Pyxis requires a verified stable version (1.0.97 or newer).');
+  }
+  const [major, minor, patch] = version;
+  if (major < 1 || (major === 1 && minor === 0 && patch < 97))
+    throw new Error('GitHub Copilot CLI 1.0.97 or newer (stable) is required for reliable JSON output. Update the bundled CLI.');
+}
 
 async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   const { mtimeMs } = await stat(request.executable);
@@ -197,7 +243,9 @@ async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   }
   // --no-auto-update selects the binary's bundled CLI. Its flags can differ
   // from the newer cached package that a plain "copilot --version" describes.
-  const usage = await runProcess({ ...request, args: ['--no-auto-update', '--help'], input: '' });
+  const version = await runProcess({ ...request, args: ['--no-auto-update', '--version'], input: '', onStdout: undefined });
+  checkCopilotVersion(version);
+  const usage = await runProcess({ ...request, args: ['--no-auto-update', '--help'], input: '', onStdout: undefined });
   const exportFlag = usage.includes('--sync-session') ? '--sync-session=off' : '--no-remote-export';
   if (!usage.includes('--available-tools') || !usage.includes(exportFlag.split('=')[0])) {
     throw new Error('The installed GitHub Copilot CLI version does not support restricted local sessions.');
@@ -206,7 +254,7 @@ async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   return exportFlag;
 }
 
-export const invokeProvider: InvokeProvider = async (provider, args, call, signal) => {
+export const invokeProvider: InvokeProvider = async (provider, args, call, signal, onStdout) => {
   const label = displayNames[provider];
   if (signal.aborted) throw cancellation(label, signal);
   const executable = await resolveExecutable(provider);
@@ -221,9 +269,11 @@ export const invokeProvider: InvokeProvider = async (provider, args, call, signa
     const launch = provider === 'copilot' ? await prepareCopilotLaunch(scratch, call, env) : { cwd: scratch, env };
     const request: ProcessRequest = {
       executable, args, ...launch, label, signal,
-      input: locations.join('\n') + '\n\n' + call.prompt,
+      input: locations.join('\n') + '\n\n' + call.prompt, onStdout,
     };
-    if (provider === 'copilot') request.args = [...args, await copilotExportFlag(request)];
+    if (provider === 'copilot') {
+      request.args = [...args, await copilotExportFlag(request)];
+    }
     return await runProcess(request);
   } finally {
     if (dirname(scratch) === scratchRoot) {
@@ -232,10 +282,12 @@ export const invokeProvider: InvokeProvider = async (provider, args, call, signa
   }
 };
 
-export function parseOutput(raw: string, label: string): unknown {
+export function parseOutput(raw: string, label: string, modelAnswer = true): unknown {
+  if (modelAnswer && !raw.trim()) throw new ModelOutputError('empty', `${label} returned an empty model response.`, raw);
   try {
     return JSON.parse(raw);
   } catch {
+    if (modelAnswer) throw new ModelOutputError('json', `${label} returned an invalid JSON response. Output only one JSON object, without prose.`, raw);
     throw new Error(`${label} returned an invalid JSON response.`);
   }
 }

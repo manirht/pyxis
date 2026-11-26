@@ -3,6 +3,7 @@ import { prepareWorkspace, removeWorkspace, validateEvidence } from '../workspac
 import type { Adapters, AgentStage, Proposal, Role, RunError, RunRecord, StageOutput, Vote } from '../types.ts'
 import { makePrompt } from './prompts.ts'
 import { parseOutput, shapes } from './outputs.ts'
+import { ModelOutputError, MAX_MODEL_OUTPUT_ATTEMPTS } from '../output-error.ts'
 
 class RoleFailure extends Error {
   role: Role
@@ -33,15 +34,32 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
     withContext = false): Promise<StageOutput[S]> {
     const { schema, path: schemaPath } = shapes[action]
     try {
-      signal.throwIfAborted()
-      const prompt = makePrompt(run, role, action, withContext ? workspace.context : '', material)
-      const raw = await adapters[role]({ runId: id, role, stage: action, cwd: workspace.cwd,
-        evidenceDir: workspace.evidenceDir, prompt, schema, schemaPath }, signal)
-      signal.throwIfAborted()
-      const value = parseOutput(action, raw)
-      if ('evidence' in value) await validateEvidence(run.input, value.evidence, signal)
-      signal.throwIfAborted()
-      return value
+      let feedback: { message: string, response: unknown } | undefined
+      for (let attempt = 1; attempt <= MAX_MODEL_OUTPUT_ATTEMPTS; attempt++) {
+        signal.throwIfAborted()
+        let raw: unknown
+        try {
+          const prompt = makePrompt(run, role, action, withContext ? workspace.context : '', material, feedback)
+          raw = await adapters[role]({ runId: id, role, stage: action, cwd: workspace.cwd,
+            evidenceDir: workspace.evidenceDir, prompt, schema, schemaPath }, signal)
+          signal.throwIfAborted()
+          const target = action === 'vote' ? material as Pick<Vote, 'version' | 'digest'> : undefined
+          const value = parseOutput(action, raw, target)
+          if ('evidence' in value) await validateEvidence(run.input, value.evidence, signal)
+          signal.throwIfAborted()
+          return value
+        } catch (e) {
+          if (!(e instanceof ModelOutputError)) throw e
+          const willRetry = !signal.aborted && e.retryable && attempt < MAX_MODEL_OUTPUT_ATTEMPTS
+          const response = e.response ?? raw ?? null
+          await store.recordRejection(id, `attempts/${stage}/${role}-${attempt}.json`,
+            { stage, role, attempt, category: e.category, message: e.message, willRetry }, response)
+          signal.throwIfAborted()
+          if (!willRetry) throw new Error(e.message + (e.retryable ? ` Recovery exhausted after ${MAX_MODEL_OUTPUT_ATTEMPTS} attempts.` : ''))
+          feedback = { message: e.message, response }
+        }
+      }
+      throw new Error('Stage recovery exhausted')
     } catch (e) {
       throw new RoleFailure(role, messageOf(signal.aborted ? signal.reason : e))
     }
@@ -106,7 +124,6 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
       await setStage('vote-v' + version)
       const positions = await pair(async (role, signal) => {
         const vote = await call(role, 'vote', { version, digest, proposalBytes: bytes }, signal)
-        if (vote.version !== version || vote.digest !== digest) throw new RoleFailure(role, 'Vote targets a different proposal')
         await store.publish(id, `votes/v${version}/${role}.json`, { ...vote, runId: id, role })
         return vote
       })

@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readFile, realpath, rm, rmdir, writeFile } from 'no
 import { devNull } from 'node:os'
 import path from 'node:path'
 import type { Evidence, PinnedInput, RunInput } from './types.ts'
+import { ModelOutputError } from './output-error.ts'
 
 const gitOptions = [
   '--no-pager', '--no-replace-objects', '--literal-pathspecs',
@@ -310,7 +311,7 @@ async function matchEvidence(repo: string, oid: string, evidence: Evidence, sign
   const count = evidence.endLine - evidence.startLine + 1
   const trailingNewline = expected.length === count + 1 && expected.at(-1) === ''
   if (trailingNewline) expected.pop()
-  const mismatch = () => new Error(`Evidence does not match ${evidence.path} lines ${evidence.startLine}-${evidence.endLine}`)
+  const mismatch = () => new ModelOutputError('citation', 'Evidence does not match the cited source lines. Re-read numbered source; the inclusive range must exactly match the excerpt.')
   if (expected.length !== count) throw mismatch()
   const wanted = expected.map(line => Buffer.from(line))
   let number = 1
@@ -352,14 +353,19 @@ async function matchEvidence(repo: string, oid: string, evidence: Evidence, sign
 export async function validateEvidence(input: PinnedInput, evidence: Evidence[], signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()
   checkPinned(input)
-  for (const item of evidence) {
-    if (item.commit !== input.headSha && (!input.baseSha || item.commit !== input.baseSha)) throw new Error('Evidence must cite a pinned commit')
-    if (!safePath(item.path)) throw new Error('Evidence must cite a safe repository-relative path')
-    if (!Number.isSafeInteger(item.startLine) || !Number.isSafeInteger(item.endLine) || item.startLine < 1 || item.endLine < item.startLine || typeof item.excerpt !== 'string') {
-      throw new Error('Invalid evidence line range or excerpt')
+  for (const [index, item] of evidence.entries()) {
+    try {
+      if (item.commit !== input.headSha && (!input.baseSha || item.commit !== input.baseSha)) throw new ModelOutputError('citation', 'Evidence must cite a pinned commit')
+      if (!safePath(item.path)) throw new ModelOutputError('citation', 'Evidence must cite a safe repository-relative path')
+      if (!Number.isSafeInteger(item.startLine) || !Number.isSafeInteger(item.endLine) || item.startLine < 1 || item.endLine < item.startLine || typeof item.excerpt !== 'string') {
+        throw new ModelOutputError('citation', 'Invalid evidence line range or excerpt')
+      }
+      const entry = await findBlob(input.repo, item.commit, item.path, signal)
+      if (!entry) throw new ModelOutputError('citation', 'Evidence path is not a tracked regular file in the pinned commit')
+      await matchEvidence(input.repo, entry.oid, item, signal)
+    } catch (error) {
+      if (error instanceof ModelOutputError) throw new ModelOutputError('citation', `Citation ${index + 1}: ${error.message}`)
+      throw error
     }
-    const entry = await findBlob(input.repo, item.commit, item.path, signal)
-    if (!entry) throw new Error(`Evidence path is not a tracked regular file: ${item.path}`)
-    await matchEvidence(input.repo, entry.oid, item, signal)
   }
 }

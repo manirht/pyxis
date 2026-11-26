@@ -1,0 +1,170 @@
+{
+  "capture": "Native Copilot failed invocation in the initial live suite on 2026-11-25",
+  "cliVersion": "1.0.115",
+  "rawStdoutSha256": "0aac06575b797c0e2d94ce4a6a532c85f9c402e569ce09bac4ee43a71311feda",
+  "sanitization": [
+    "Kept exact event order and event types",
+    "Removed IDs, timestamps, source paths, instructions, tool arguments and results",
+    "Preserved empty root content and tool-request counts; replaced nonempty assistant text",
+    "Kept the native terminal exit code and exact empty-response stderr"
+  ],
+  "nativeExitCode": 1,
+  "stderr": "Error: The model returned an empty response, so the run produced no answer.",
+  "events": [
+    {
+      "type": "session.start"
+    },
+    {
+      "type": "session.model_change"
+    },
+    {
+      "type": "session.model_change"
+    },
+    {
+      "type": "session.info"
+    },
+    {
+      "type": "session.mcp_servers_loaded"
+    },
+    {
+      "type": "session.tools_updated"
+    },
+    {
+      "type": "instruction.update"
+    },
+    {
+      "type": "user.message"
+    },
+    {
+      "type": "assistant.turn_start"
+    },
+    {
+      "type": "model.call_start"
+    },
+    {
+      "type": "model.call_finished"
+    },
+    {
+      "type": "assistant.message",
+      "data": {
+        "content": "",
+        "toolRequests": [
+          {}
+        ]
+      }
+    },
+    {
+      "type": "tool.execution_start"
+    },
+    {
+      "type": "model.call_final_result"
+    },
+    {
+      "type": "tool.execution_complete",
+      "data": {
+        "success": true
+      }
+    },
+    {
+      "type": "assistant.turn_end"
+    },
+    {
+      "type": "assistant.turn_start"
+    },
+    {
+      "type": "model.call_start"
+    },
+    {
+      "type": "model.call_finished"
+    },
+    {
+      "type": "assistant.message",
+      "data": {
+        "content": "",
+        "toolRequests": [
+          {}
+        ]
+      }
+    },
+    {
+      "type": "tool.execution_start"
+    },
+    {
+      "type": "model.call_final_result"
+    },
+    {
+      "type": "tool.execution_complete",
+      "data": {
+        "success": true
+      }
+    },
+    {
+      "type": "assistant.turn_end"
+    },
+    {
+      "type": "assistant.turn_start"
+    },
+    {
+      "type": "model.call_start"
+    },
+    {
+      "type": "model.call_finished"
+    },
+    {
+      "type": "assistant.message",
+      "data": {
+        "content": "[redacted assistant content]",
+        "toolRequests": [
+          {}
+        ]
+      }
+    },
+    {
+      "type": "tool.execution_start"
+    },
+    {
+      "type": "model.call_final_result"
+    },
+    {
+      "type": "tool.execution_complete",
+      "data": {
+        "success": true
+      }
+    },
+    {
+      "type": "assistant.turn_end"
+    },
+    {
+      "type": "assistant.turn_start"
+    },
+    {
+      "type": "model.call_start"
+    },
+    {
+      "type": "model.call_finished"
+    },
+    {
+      "type": "assistant.message",
+      "data": {
+        "content": "",
+        "toolRequests": []
+      }
+    },
+    {
+      "type": "model.call_final_result"
+    },
+    {
+      "type": "assistant.turn_end"
+    },
+    {
+      "type": "session.usage_checkpoint"
+    },
+    {
+      "type": "assistant.idle"
+    },
+    {
+      "type": "result",
+      "exitCode": 1
+    }
+  ]
+}
