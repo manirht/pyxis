@@ -107,14 +107,14 @@ for (const kind of ['schema', 'malformed-json', 'prose-json', 'empty', 'native-e
   test('a ' + kind + ' model response is rejected then regenerated through a fresh adapter call', async t => {
     const s = await setup(t)
     let attempts = 0
-    const adapter = copilotAdapter(undefined, async (_provider, _args, call, signal) => {
+    const adapter = copilotAdapter(undefined, async (_provider, _args, call, signal, onStdout) => {
       if (call.stage === 'investigate' && ++attempts === 1) {
         if (kind === 'native-empty' || kind === 'captured-native-empty') return await runProcess({
           executable: process.execPath, args: ['-e', 'process.stdout.write(process.argv[1]);process.stderr.write(process.argv[2]);process.exitCode=1',
             kind === 'captured-native-empty' ? capturedNativeEmpty.events.map((event: unknown) => JSON.stringify(event)).join('\n') + '\n' : events('', 1),
             kind === 'captured-native-empty' ? capturedNativeEmpty.stderr : fixtures.emptyStderr],
           label: 'GitHub Copilot', cwd: s.f.root, input: '', signal, env: process.env,
-          outputMode: kind === 'captured-native-empty' ? 'copilot-jsonl' : undefined,
+          onStdout: kind === 'captured-native-empty' ? onStdout : undefined,
         })
         const bad = { schema: '{"hypothesis":false}', 'malformed-json': '{"hypothesis":"sensitive-unpublished-text"',
           'prose-json': fixtures.prosePrefix + JSON.stringify(s.report), empty: '' }[kind]

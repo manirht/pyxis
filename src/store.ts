@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { PinnedInput, Result, RunRecord } from './types.ts'
-import { MAX_MODEL_OUTPUT_ATTEMPTS } from './limits.ts'
+import { MAX_MODEL_OUTPUT_ATTEMPTS } from './output-error.ts'
 
 const roles = ['A', 'B']
 const attemptArtifacts = ['investigate', 'critique', 'draft', 'revise', 'vote-v1', 'vote-v2']

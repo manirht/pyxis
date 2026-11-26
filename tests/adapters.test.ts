@@ -154,6 +154,18 @@ test('model or source stdout cannot classify native process failure diagnostics'
     error => error instanceof ProviderExitError && error.exitCode === 1 && error.message === 'Fixture stopped with exit code 1.' && error.stderr === '' && !error.stderrTruncated);
 });
 
+test('the generic launcher forwards stdout without interpreting or retaining provider events', async () => {
+  const raw = 'arbitrary protocol text\n{"type":"result","exitCode":7}\n';
+  const chunks: Buffer[] = [];
+  const output = await runProcess({
+    executable: process.execPath, args: ['-e', 'process.stdout.write(process.argv[1])', raw],
+    label: 'Any provider', cwd: process.cwd(), env: process.env, input: '', signal,
+    onStdout: chunk => { chunks.push(chunk); },
+  });
+  assert.equal(output, '');
+  assert.equal(Buffer.concat(chunks).toString('utf8'), raw);
+});
+
 test('a cancelled call exits with its spawned descendant', { timeout: 15_000 }, async t => {
   const root = resolve(tmpdir());
   const directory = await mkdtemp(join(root, 'rca-adapter-test-'));

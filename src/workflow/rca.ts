@@ -3,8 +3,7 @@ import { prepareWorkspace, removeWorkspace, validateEvidence } from '../workspac
 import type { Adapters, AgentStage, Proposal, Role, RunError, RunRecord, StageOutput, Vote } from '../types.ts'
 import { makePrompt } from './prompts.ts'
 import { parseOutput, shapes } from './outputs.ts'
-import { ModelOutputError } from '../output-error.ts'
-import { MAX_MODEL_OUTPUT_ATTEMPTS } from '../limits.ts'
+import { ModelOutputError, MAX_MODEL_OUTPUT_ATTEMPTS } from '../output-error.ts'
 
 class RoleFailure extends Error {
   role: Role

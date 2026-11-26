@@ -11,6 +11,7 @@ import { prepareCopilotLaunch } from '../src/adapters/copilot-home.ts'
 import { invokeProvider } from '../src/adapters/process.ts'
 import { bindProvider, createAdapters, isProvider } from '../src/adapters/index.ts'
 import { parseOutput, shapes } from '../src/workflow/outputs.ts'
+import { ModelOutputError } from '../src/output-error.ts'
 import type { AgentCall } from '../src/types.ts'
 
 const call: AgentCall = {
@@ -97,6 +98,16 @@ test('Copilot reads the final root assistant event without text wrapping or tool
   assert.deepEqual(await adapter(call, signal), expected)
 })
 
+test('Copilot extracts JSON while the shared workflow validates the requested stage shape', async () => {
+  for (const value of [null, [], true, 7, 'PRIVATE_INVALID_RESPONSE', {}, { wrong: 'field' }, report]) {
+    const output = await copilotAdapter(undefined, async () => response(JSON.stringify(value)))(call, signal)
+    assert.deepEqual(output, value)
+    if (value === report) assert.deepEqual(parseOutput('investigate', output), report)
+    else assert.throws(() => parseOutput('investigate', output), error =>
+      error instanceof ModelOutputError && error.category === 'schema' && !error.message.includes('PRIVATE_INVALID_RESPONSE'))
+  }
+})
+
 test('Copilot requires one successful terminal result and a final root response with no requested tools', async () => {
   const final = message(JSON.stringify(report))
   const toolOnly = { ...final, data: { ...final.data, toolRequests: [{ toolCallId: 'read', name: 'view', arguments: { path: 'file.ts' } }] } }
@@ -110,7 +121,7 @@ test('Copilot requires one successful terminal result and a final root response 
     jsonl({ ...final, data: { content: 1 } }, completed),
     jsonl({ ...final, data: { content: '{}', toolRequests: 'view' } }, completed),
     jsonl(message('{"hypothesis":"broken\nstring"}'), completed),
-    jsonl(message('{}\n{}'), completed), jsonl(message('null'), completed),
+    jsonl(message('{}\n{}'), completed),
     jsonl(final, null, completed), jsonl(final, { type: 1 }, completed),
   ]) {
     await assert.rejects(copilotAdapter(undefined, async () => raw)(call, signal), /Copilot/i)

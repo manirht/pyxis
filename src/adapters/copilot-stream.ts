@@ -82,29 +82,4 @@ export class CopilotStream {
     return this.response.content;
   }
 
-  compact(expectedExitCode: 0 | 1 = 0): string {
-    const content = this.content(expectedExitCode);
-    return JSON.stringify({ type: 'assistant.message', data: { content } }) + '\n' +
-      JSON.stringify({ type: 'result', exitCode: expectedExitCode }) + '\n';
-  }
-
-  collected(): string {
-    if (this.lineBytes) this.readLine();
-    if (this.response?.oversized) throw new Error('GitHub Copilot response exceeded the 2 MiB final answer limit.');
-    // Failed native exits still need adapter interpretation. Preserve the
-    // actual root/tool state and terminal (including absence or wrong status)
-    // without retaining tools or fabricating a successful/complete stream.
-    const events: object[] = [];
-    if (this.response) events.push({ type: 'assistant.message', data: {
-      content: this.response.content, ...(this.response.hasTools ? { toolRequests: [{}] } : {}),
-    } });
-    if (this.completed) events.push({ type: 'result', exitCode: this.exitCode });
-    return events.map(event => JSON.stringify(event)).join('\n');
-  }
-}
-
-export function copilotContent(raw: string, expectedExitCode: 0 | 1 = 0): string {
-  const stream = new CopilotStream();
-  stream.write(Buffer.from(raw, 'utf8'));
-  return stream.content(expectedExitCode);
 }

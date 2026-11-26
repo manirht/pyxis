@@ -7,7 +7,6 @@ import { promisify } from 'node:util';
 import type { AgentCall } from '../types.ts';
 import { ModelOutputError } from '../output-error.ts';
 import { prepareCopilotLaunch } from './copilot-home.ts';
-import { CopilotStream } from './copilot-stream.ts';
 
 type Provider = 'claude' | 'codex' | 'copilot';
 const displayNames = { claude: 'Claude Code', codex: 'Codex', copilot: 'GitHub Copilot' };
@@ -114,7 +113,8 @@ export interface ProcessRequest {
   input: string;
   signal: AbortSignal;
   env: NodeJS.ProcessEnv;
-  outputMode?: 'copilot-jsonl';
+  // A consumer owns protocol parsing and output limits; streamed bytes are not retained.
+  onStdout?: (chunk: Buffer) => void;
 }
 
 export class ProviderExitError extends Error {
@@ -155,7 +155,6 @@ export function runProcess(request: ProcessRequest): Promise<string> {
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
     });
     const chunks: Buffer[] = [];
-    const stream = request.outputMode === 'copilot-jsonl' ? new CopilotStream() : undefined;
     let bytes = 0;
     let stderr = Buffer.alloc(0);
     let stderrBytes = 0;
@@ -182,8 +181,8 @@ export function runProcess(request: ProcessRequest): Promise<string> {
     signal.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', (chunk: Buffer) => {
       if (failure) return;
-      if (stream) {
-        try { stream.write(chunk); }
+      if (request.onStdout) {
+        try { request.onStdout(chunk); }
         catch (error) { stop(error as Error); }
         return;
       }
@@ -204,30 +203,23 @@ export function runProcess(request: ProcessRequest): Promise<string> {
       signal.removeEventListener('abort', onAbort);
       await stopping;
       if (failure) return reject(failure);
-      let output = stream ? '' : Buffer.concat(chunks).toString('utf8');
+      const output = Buffer.concat(chunks).toString('utf8');
       if (code !== 0) {
         const status = code === null ? `on signal ${exitSignal}` : `with exit code ${code}`;
         const diagnostic = stderr.toString('utf8').trim();
         const detail = failureDetail(diagnostic);
-        if (stream) {
-          try { output = stream.collected(); }
-          catch (error) { return reject(error); }
-        }
         return reject(new ProviderExitError(`${label} stopped ${status}.${detail}`,
           code, output, stderr, stderrBytes > diagnosticBytes));
       }
       if (stdinFailed) return reject(new Error(`${label} closed its input before receiving the prompt.`));
-      if (stream) {
-        try { output = stream.compact(); }
-        catch (error) { return reject(error); }
-      }
       resolve(output);
     });
     child.stdin.end(input, 'utf8');
   });
 }
 
-export type InvokeProvider = (provider: Provider, args: string[], call: AgentCall, signal: AbortSignal) => Promise<string>;
+export type InvokeProvider = (provider: Provider, args: string[], call: AgentCall, signal: AbortSignal,
+  onStdout?: (chunk: Buffer) => void) => Promise<string>;
 
 let copilotCapability: { executable: string; modified: number; exportFlag: string } | undefined;
 
@@ -248,11 +240,11 @@ async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   }
   // --no-auto-update selects the binary's bundled CLI. Its flags can differ
   // from the newer cached package that a plain "copilot --version" describes.
-  const version = await runProcess({ ...request, args: ['--no-auto-update', '--version'], input: '' });
+  const version = await runProcess({ ...request, args: ['--no-auto-update', '--version'], input: '', onStdout: undefined });
   if (!supportedCopilotVersion(version)) {
     throw new Error('GitHub Copilot CLI 1.0.97 or newer (stable) is required for reliable JSON output. Update the bundled CLI.');
   }
-  const usage = await runProcess({ ...request, args: ['--no-auto-update', '--help'], input: '' });
+  const usage = await runProcess({ ...request, args: ['--no-auto-update', '--help'], input: '', onStdout: undefined });
   const exportFlag = usage.includes('--sync-session') ? '--sync-session=off' : '--no-remote-export';
   if (!usage.includes('--available-tools') || !usage.includes(exportFlag.split('=')[0])) {
     throw new Error('The installed GitHub Copilot CLI version does not support restricted local sessions.');
@@ -261,7 +253,7 @@ async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   return exportFlag;
 }
 
-export const invokeProvider: InvokeProvider = async (provider, args, call, signal) => {
+export const invokeProvider: InvokeProvider = async (provider, args, call, signal, onStdout) => {
   const label = displayNames[provider];
   if (signal.aborted) throw cancellation(label, signal);
   const executable = await resolveExecutable(provider);
@@ -276,11 +268,10 @@ export const invokeProvider: InvokeProvider = async (provider, args, call, signa
     const launch = provider === 'copilot' ? await prepareCopilotLaunch(scratch, call, env) : { cwd: scratch, env };
     const request: ProcessRequest = {
       executable, args, ...launch, label, signal,
-      input: locations.join('\n') + '\n\n' + call.prompt,
+      input: locations.join('\n') + '\n\n' + call.prompt, onStdout,
     };
     if (provider === 'copilot') {
       request.args = [...args, await copilotExportFlag(request)];
-      request.outputMode = 'copilot-jsonl';
     }
     return await runProcess(request);
   } finally {

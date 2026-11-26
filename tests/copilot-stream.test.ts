@@ -18,7 +18,13 @@ const nativeEmpty = 'Error: The model returned an empty response, so the run pro
 function child(source: string, options: Partial<ProcessRequest> = {}) {
   return runProcess({ executable: process.execPath, args: ['-e', source], label: 'GitHub Copilot',
     cwd: process.cwd(), input: '', signal: AbortSignal.timeout(10_000), env: process.env,
-    outputMode: 'copilot-jsonl', ...options });
+    ...options });
+}
+
+function throughAdapter(source: string, options: Partial<ProcessRequest> = {}, streamed = true) {
+  return copilotAdapter(undefined, (_provider, _args, _call, signal, onStdout) =>
+    child(source, { ...options, signal, onStdout: streamed ? onStdout : undefined }))(
+      call, options.signal ?? AbortSignal.timeout(10_000));
 }
 
 const streamWriter = `
@@ -31,19 +37,18 @@ const streamWriter = `
 `;
 
 test('Copilot stage streaming discards 32 large tool results and preserves the final root answer', async () => {
-  const output = await child(streamWriter + `
+  const output = await throughAdapter(streamWriter + `
     (async () => {
       await tools(32);
       await write(${JSON.stringify(jsonl(message(), terminal))});
     })();
   `);
-  assert.ok(Buffer.byteLength(output) < 1024, 'discarded tool output must not be retained');
-  assert.deepEqual(await copilotAdapter(undefined, async () => output)(call, AbortSignal.timeout(1000)), report);
+  assert.deepEqual(output, report);
 });
 
 test('Copilot stage streaming validates discarded events before and after large tool output', async () => {
   for (const location of ['before', 'after']) {
-    await assert.rejects(child(streamWriter + `
+    await assert.rejects(throughAdapter(streamWriter + `
       (async () => {
         if (${JSON.stringify(location)} === 'before') await write('{broken}\\n');
         await tools(32);
@@ -62,7 +67,7 @@ test('Copilot stage streaming keeps terminal and outstanding-tool validation aft
     jsonl(message(), { type: 'session.error', data: { message: 'private-diagnostic' } }, terminal),
     jsonl(message(), terminal) + '{"type":',
   ]) {
-    await assert.rejects(child(streamWriter + `
+    await assert.rejects(throughAdapter(streamWriter + `
       (async () => { await tools(32); await write(${JSON.stringify(ending)}); })();
     `), error => {
       assert.ok(error instanceof Error && !(error instanceof ModelOutputError));
@@ -74,32 +79,32 @@ test('Copilot stage streaming keeps terminal and outstanding-tool validation aft
 });
 
 test('Copilot streaming separately bounds the final answer, individual event and total wire bytes', async () => {
-  await assert.rejects(child(streamWriter + `
+  await assert.rejects(throughAdapter(streamWriter + `
     (async () => {
       await write(JSON.stringify({type:'assistant.message', data:{content:'x'.repeat(2*1024*1024+1)}})+'\\n');
       await write(${JSON.stringify(jsonl(terminal))});
     })();
   `), /2 MiB final answer limit/);
-  await assert.rejects(child(streamWriter + `
+  await assert.rejects(throughAdapter(streamWriter + `
     (async () => { await tools(1, 4*1024*1024+1); await write(${JSON.stringify(jsonl(message(), terminal))}); })();
   `), /4 MiB event limit/);
-  await assert.rejects(child(streamWriter + `
+  await assert.rejects(throughAdapter(streamWriter + `
     (async () => { await tools(513); await write(${JSON.stringify(jsonl(message(), terminal))}); })();
   `), /32 MiB stream limit/);
 });
 
 test('Copilot accepts a bounded final answer after oversized intermediate commentary', async () => {
-  const output = await child(streamWriter + `
+  const output = await throughAdapter(streamWriter + `
     (async () => {
       await write(JSON.stringify({type:'assistant.message', data:{content:'x'.repeat(2*1024*1024+1)}})+'\\n');
       await write(${JSON.stringify(jsonl(message(), terminal))});
     })();
   `);
-  assert.deepEqual(await copilotAdapter(undefined, async () => output)(call, AbortSignal.timeout(1000)), report);
+  assert.deepEqual(output, report);
 });
 
 test('Copilot accepts answers and discarded events exactly at their separate byte limits', async () => {
-  const output = await child(streamWriter + `
+  const output = await throughAdapter(streamWriter + `
     (async () => {
       const event = {type:'tool.execution_complete', data:{content:''}};
       event.data.content = 'x'.repeat(4*1024*1024 - Buffer.byteLength(JSON.stringify(event)));
@@ -109,14 +114,14 @@ test('Copilot accepts answers and discarded events exactly at their separate byt
       await write(${JSON.stringify(jsonl(terminal))});
     })();
   `);
-  const actual = await copilotAdapter(undefined, async () => output)(call, AbortSignal.timeout(1000)) as {body: string};
+  const actual = output as {body: string};
   assert.equal(actual.body.length, 2*1024*1024-11);
   assert.ok(/^x+$/.test(actual.body));
 });
 
 test('Copilot accepts exactly the total wire limit and rejects one additional byte', async () => {
   for (const extra of [0, 1]) {
-    const running = child(streamWriter + `
+    const running = throughAdapter(streamWriter + `
       (async () => {
         const ending = ${JSON.stringify(jsonl(message(), terminal))};
         let written = 0;
@@ -134,18 +139,18 @@ test('Copilot accepts exactly the total wire limit and rejects one additional by
       })();
     `);
     if (extra) await assert.rejects(running, /32 MiB stream limit/);
-    else assert.deepEqual(await copilotAdapter(undefined, async () => await running)(call, AbortSignal.timeout(1000)), report);
+    else assert.deepEqual(await running, report);
   }
 });
 
 test('Copilot streaming preserves multibyte UTF-8 split across writes and rejects invalid bytes anywhere', async () => {
   const valid = Buffer.from(jsonl({ type: 'tool.execution_complete', data: { content: '漢字😀' } }, message(), terminal));
-  const output = await child(streamWriter + `
+  const output = await throughAdapter(streamWriter + `
     (async () => { for (const byte of Buffer.from(${JSON.stringify(valid.toString('base64'))}, 'base64')) await write(Buffer.from([byte])); })();
   `);
-  assert.deepEqual(await copilotAdapter(undefined, async () => output)(call, AbortSignal.timeout(1000)), report);
+  assert.deepEqual(output, report);
   for (const placement of ['tool', 'answer', 'trailing']) {
-    await assert.rejects(child(streamWriter + `
+    await assert.rejects(throughAdapter(streamWriter + `
       (async () => {
         await tools(32);
         if (${JSON.stringify(placement)} === 'tool') await write(Buffer.concat([Buffer.from('{"type":"tool.execution_complete","data":{"content":"'), Buffer.from([0xc3,0x28]), Buffer.from('"}}\\n')]));
@@ -161,16 +166,16 @@ test('only native Copilot stderr classifies native-empty failure, regardless of 
   const empty = jsonl({ type: 'tool.execution_complete', data: { content: 'authentication failed, usage limit reached, network error' } },
     message('The source logs authentication failed, usage limit reached, and network error.'), message(''), { type: 'result', exitCode: 1 });
   await assert.rejects(child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`),
-    error => error instanceof ProviderExitError && error.exitCode === 1 && error.stderr === nativeEmpty && error.stdout.length < 256);
+    error => error instanceof ProviderExitError && error.exitCode === 1 && error.stderr === nativeEmpty && error.stdout === empty);
   // Injected invokers may still use the plain-text process contract. Classify
   // stderr correctly there too, before the adapter validates the JSONL.
   await assert.rejects(copilotAdapter(undefined, async () => child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`,
-    { outputMode: undefined }))(call, AbortSignal.timeout(1000)),
+    {}))(call, AbortSignal.timeout(1000)),
     error => error instanceof ModelOutputError && error.category === 'empty');
   await assert.rejects(child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write('authentication failed PRIVATE-TOKEN'); process.exitCode=1;`),
     error => error instanceof ProviderExitError && error.exitCode === 1 && /credentials/.test(error.message) && !error.message.includes('PRIVATE-TOKEN'));
   const errorStream = jsonl(message(''), { type: 'session.error', data: { message: 'PRIVATE-TOKEN' } }, { type: 'result', exitCode: 1 });
-  await assert.rejects(child(`process.stdout.write(${JSON.stringify(errorStream)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`),
+  await assert.rejects(throughAdapter(`process.stdout.write(${JSON.stringify(errorStream)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`),
     error => error instanceof Error && !(error instanceof ModelOutputError) && !error.message.includes('PRIVATE-TOKEN'));
   for (const diagnostic of ['Error: The model returned an empty response.', nativeEmpty + '\nauthentication failed', 'network error', 'usage limit reached']) {
     await assert.rejects(copilotAdapter(undefined, async () => child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write(${JSON.stringify(diagnostic)}); process.exitCode=1;`))(call, AbortSignal.timeout(1000)),
@@ -184,10 +189,10 @@ test('only native Copilot stderr classifies native-empty failure, regardless of 
 
 test('Copilot alone interprets typed exits and validates the actual failed stream before retrying', async () => {
   const empty = jsonl(message(''), { type: 'result', exitCode: 1 });
-  for (const outputMode of [undefined, 'copilot-jsonl'] as const) {
+  for (const streamed of [false, true]) {
     // A different launcher label must not change Copilot adapter semantics.
-    await assert.rejects(copilotAdapter(undefined, async () => child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`,
-      { label: 'Generic launcher', outputMode }))(call, AbortSignal.timeout(1000)),
+    await assert.rejects(copilotAdapter(undefined, async (_provider, _args, _call, _signal, onStdout) => child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`,
+      { label: 'Generic launcher', onStdout: streamed ? onStdout : undefined }))(call, AbortSignal.timeout(1000)),
       error => error instanceof ModelOutputError && error.category === 'empty');
     for (const output of [
       '', jsonl(message('')), jsonl({type:'result',exitCode:1}),
@@ -195,8 +200,8 @@ test('Copilot alone interprets typed exits and validates the actual failed strea
       jsonl(message('nonempty'), {type:'result',exitCode:1}),
       jsonl(message('', {data:{content:'',toolRequests:[{id:'pending'}]}}), {type:'result',exitCode:1}),
     ]) {
-      await assert.rejects(copilotAdapter(undefined, async () => child(`process.stdout.write(${JSON.stringify(output)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`,
-        { outputMode }))(call, AbortSignal.timeout(1000)), error => error instanceof Error && !(error instanceof ModelOutputError));
+      await assert.rejects(copilotAdapter(undefined, async (_provider, _args, _call, _signal, onStdout) => child(`process.stdout.write(${JSON.stringify(output)}); process.stderr.write(${JSON.stringify(nativeEmpty)}); process.exitCode=1;`,
+        { onStdout: streamed ? onStdout : undefined }))(call, AbortSignal.timeout(1000)), error => error instanceof Error && !(error instanceof ModelOutputError));
     }
   }
   await assert.rejects(copilotAdapter(undefined, async () => child(`process.stdout.write(${JSON.stringify(empty)}); process.stderr.write('PRIVATE-EARLIER-DIAGNOSTIC'+' '.repeat(9000)+${JSON.stringify(nativeEmpty)}); process.exitCode=1;`))(call, AbortSignal.timeout(1000)),
@@ -205,33 +210,32 @@ test('Copilot alone interprets typed exits and validates the actual failed strea
     error => error instanceof ProviderExitError && error.exitCode === 2);
 });
 
-test('failed Copilot streams retain only bounded root and terminal data for adapter interpretation', async () => {
-  let failure: ProviderExitError | undefined;
-  try {
-    await child(streamWriter + `
-      (async () => {
-        await tools(32);
-        await write(${JSON.stringify(jsonl(message(''), {type:'result',exitCode:1}))});
-        process.stderr.write(${JSON.stringify(nativeEmpty)});
-        process.exitCode = 1;
-      })();
-    `);
-    assert.fail('Expected a typed native exit.');
-  } catch (error) {
+test('streamed native failures keep status and stderr without rebuilding or retaining stdout', async () => {
+  const source = streamWriter + `
+    (async () => {
+      await tools(32);
+      await write(${JSON.stringify(jsonl(message(''), {type:'result',exitCode:1}))});
+      process.stderr.write(${JSON.stringify(nativeEmpty)});
+      process.exitCode = 1;
+    })();
+  `;
+  let received = 0;
+  await assert.rejects(child(source, { onStdout: chunk => { received += chunk.length; } }), error => {
     assert.ok(error instanceof ProviderExitError);
-    failure = error;
-  }
-  assert.equal(failure.exitCode, 1);
-  assert.ok(failure.stdout.length < 256);
-  assert.deepEqual(failure.stdout.split('\n').map(line => JSON.parse(line)), [message('', {data:{content:''}}), {type:'result',exitCode:1}]);
-  await assert.rejects(copilotAdapter(undefined, async () => { throw failure; })(call, AbortSignal.timeout(1000)),
+    assert.equal(error.exitCode, 1);
+    assert.equal(error.stderr, nativeEmpty);
+    assert.equal(error.stdout, '');
+    return true;
+  });
+  assert.ok(received > 2 * 1024 * 1024);
+  await assert.rejects(throughAdapter(source),
     error => error instanceof ModelOutputError && error.category === 'empty');
 });
 
 test('Copilot streaming keeps cancellation and deadlines effective while draining tools', async () => {
   for (const reason of [undefined, new DOMException('deadline', 'TimeoutError')]) {
     const controller = new AbortController();
-    const running = child(streamWriter + `(async () => { while(true) await tools(1); })();`, { signal: controller.signal });
+    const running = throughAdapter(streamWriter + `(async () => { while(true) await tools(1); })();`, { signal: controller.signal });
     const rejected = assert.rejects(running, { name: reason ? 'TimeoutError' : 'AbortError' });
     setTimeout(() => controller.abort(reason), 30);
     await rejected;
