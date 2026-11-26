@@ -62,7 +62,11 @@ test('a script can submit from its own working directory and retrieve status and
   })
   assert.deepEqual(JSON.parse(run.stdout), { runId: api.record.id, status: 'queued' })
   assert.equal(run.stderr, '')
-  assert.deepEqual(api.submissions, [{ repo: await realpath(tmpdir()), issue }])
+  assert.equal(api.submissions.length, 1)
+  // A child can retain a Windows 8.3 path (or a POSIX alias) for its cwd.
+  // Compare both spellings canonically while preserving the request assertion.
+  assert.deepEqual({ ...api.submissions[0], repo: await realpath(api.submissions[0]!.repo) },
+    { repo: await realpath(tmpdir()), issue })
   api.record.status = 'running'
   api.record.stage = 'investigate'
   api.record.artifacts = Object.keys(api.saved)
