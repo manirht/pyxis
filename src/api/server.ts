@@ -5,6 +5,10 @@ import { isAbsolute } from 'node:path'
 import type { RunInput, RunRecord } from '../types.ts'
 
 export interface ApiService {
+  storageRoot: string
+  reviewers: RunRecord['agents']
+  list(): Promise<RunRecord[]>
+  report(id: string): Promise<string | null>
   submit(input: RunInput): Promise<RunRecord>
   get(id: string): Promise<RunRecord | null>
   artifacts(id: string): Promise<Record<string, unknown>>
@@ -14,6 +18,7 @@ const assets = new Map([
   ['/', ['dashboard.html', 'text/html; charset=utf-8']],
   ['/dashboard.css', ['dashboard.css', 'text/css; charset=utf-8']],
   ['/dashboard.js', ['dashboard.js', 'text/javascript; charset=utf-8']],
+  ['/favicon.svg', ['favicon.svg', 'image/svg+xml']],
 ])
 const maxBodyBytes = 64 * 1024
 
@@ -82,7 +87,7 @@ export async function startApi(service: ApiService, port = 4317) {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'no-referrer')
     response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
-    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
     try {
       const listener = server.address()
       if (!listener || typeof listener === 'string') throw new HttpError(503, 'The service is stopping.')
@@ -100,22 +105,36 @@ export async function startApi(service: ApiService, port = 4317) {
         response.end(body)
         return
       }
+      if (path === '/runs' && request.method === 'GET') {
+        json(response, 200, { runs: await service.list(), storageRoot: service.storageRoot, reviewers: service.reviewers })
+        return
+      }
       if (path === '/runs' && request.method === 'POST') {
         const run = await service.submit(await readSubmission(request))
         response.setHeader('Location', '/runs/' + encodeURIComponent(run.id))
         json(response, 202, { runId: run.id, status: 'queued' })
         return
       }
-      const runRoute = /^\/runs\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})(\/artifacts)?$/.exec(path)
+      const runRoute = /^\/runs\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})(\/(?:artifacts|report))?$/.exec(path)
       if (runRoute && request.method === 'GET') {
         const id = runRoute[1]!
         const record = await service.get(id)
         if (!record) throw new HttpError(404, 'Run not found.')
-        json(response, 200, runRoute[2] ? await service.artifacts(id) : record)
+        if (runRoute[2] === '/report') {
+          const report = await service.report(id)
+          if (report === null) throw new HttpError(404, 'Run not found.')
+          // IDs are restricted by the route; keep only filename-safe ASCII anyway.
+          const filename = 'pyxis-' + id.replace(/[^a-zA-Z0-9_-]/g, '') + '-report.md'
+          response.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${filename}"` })
+          response.end(report)
+          return
+        }
+        json(response, 200, runRoute[2] === '/artifacts' ? await service.artifacts(id) : record)
         return
       }
       if (path === '/runs' || runRoute || asset) {
-        response.setHeader('Allow', path === '/runs' ? 'POST' : 'GET')
+        response.setHeader('Allow', path === '/runs' ? 'GET, POST' : 'GET')
         throw new HttpError(405, 'Unsupported method for this route.')
       }
       throw new HttpError(404, 'Route not found.')

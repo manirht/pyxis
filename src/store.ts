@@ -4,8 +4,36 @@ import { createConnection, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import type { PinnedInput, Result, RunRecord } from './types.ts'
+import type { PinnedInput, Result, Role, RunRecord } from './types.ts'
 import { MAX_MODEL_OUTPUT_ATTEMPTS } from './output-error.ts'
+import { renderRunReport } from './run-report.ts'
+
+export interface CallAudit {
+  stage: string
+  action: string
+  role: Role
+  attempt: number
+  provider: string
+  model: string | null
+  startedAt: string
+}
+
+export interface RunEvent {
+  timestamp: string
+  kind: 'run-created' | 'run-state' | 'artifact-published' | 'call-started' | 'call-finished'
+  stage: string
+  status: string
+  artifact?: string
+  action?: string
+  role?: Role
+  attempt?: number
+  provider?: string
+  model?: string | null
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
+  category?: string
+}
 
 const roles = ['A', 'B']
 const attemptArtifacts = ['investigate', 'critique', 'draft', 'revise', 'vote-v1', 'vote-v2']
@@ -109,6 +137,8 @@ export class RunStore {
       updatedAt: now, finishedAt: null, artifacts: [], proposalDigests: {}, error: null,
       cleanupPending: false, cleanupError: null }
     await mkdir(this.directory(id), { mode: 0o700 })
+    // The manifest commits submission; audit events are a derived view.
+    await this.appendEvent(id, { timestamp: now, kind: 'run-created', stage: run.stage, status: run.status })
     await atomicWrite(join(this.directory(id), 'run.json'), jsonBytes(run))
     return run
   }
@@ -120,21 +150,90 @@ export class RunStore {
 
   async ids() { return (await readdir(this.root, { withFileTypes: true })).filter(e => e.isDirectory() && isRunId(e.name)).map(e => e.name) }
 
+  async list(): Promise<RunRecord[]> {
+    const records: RunRecord[] = []
+    for (const id of await this.ids()) {
+      try {
+        const run = await this.get(id)
+        if (run && run.id === id && typeof run.createdAt === 'string') records.push(run)
+      } catch { console.error('Saved run could not be listed', id) }
+    }
+    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, 100)
+  }
+
   async artifacts(id: string): Promise<Record<string, unknown>> {
     const run = await this.get(id)
-    if (!run) return {}
+    return run ? this.readArtifacts(run) : {}
+  }
+
+  private async readArtifacts(run: RunRecord): Promise<Record<string, unknown>> {
     return Object.fromEntries(await Promise.all(run.artifacts.filter(a => knownArtifacts.includes(a)).map(async a =>
-      [a, await readJson(join(this.directory(id), a))] as const)))
+      [a, await readJson(join(this.directory(run.id), a))] as const)))
   }
 
   change(id: string, update: (r: RunRecord) => void | Promise<void>) {
     return this.serialized(async () => {
       const run = await this.get(id)
       if (!run) throw new Error('Run record unavailable')
+      const previous = { status: run.status, stage: run.stage, artifacts: [...run.artifacts] }
       await update(run)
       run.updatedAt = new Date().toISOString()
       await atomicWrite(join(this.directory(id), 'run.json'), jsonBytes(run))
+      if (run.status !== previous.status || run.stage !== previous.stage) {
+        await this.appendEvent(id, { timestamp: run.updatedAt, kind: 'run-state', stage: run.stage, status: run.status })
+      }
+      for (const artifact of run.artifacts.filter(name => !previous.artifacts.includes(name))) {
+        await this.appendEvent(id, { timestamp: run.updatedAt, kind: 'artifact-published', stage: run.stage, status: run.status, artifact })
+      }
+      if (run.status !== 'queued' && run.status !== 'running') {
+        await this.writeReport(run).catch(() => console.error('Run report refresh failed for', id))
+      }
       return run
+    })
+  }
+
+  private async appendEvent(id: string, event: RunEvent) {
+    try {
+      const handle = await open(join(this.directory(id), 'events.jsonl'), 'a', 0o600)
+      try { await handle.writeFile(JSON.stringify(event) + '\n'); await handle.sync() }
+      finally { await handle.close() }
+    } catch { console.error('Run audit append failed for', id) }
+  }
+
+  private async writeReport(run: RunRecord) {
+    const report = renderRunReport(run, await this.readArtifacts(run))
+    await atomicWrite(join(this.directory(run.id), 'REPORT.md'), report)
+      .catch(() => console.error('Run report save failed for', run.id))
+    return report
+  }
+
+  report(id: string): Promise<string | null> {
+    return this.serialized(async () => {
+      const run = await this.get(id)
+      return run ? this.writeReport(run) : null
+    })
+  }
+
+  startCall(id: string, details: { stage: string, action: string, role: Role, attempt: number }): Promise<CallAudit> {
+    if (!attemptArtifacts.includes(`attempts/${details.stage}/${details.role}-${details.attempt}.json`)) {
+      return Promise.reject(new Error('Unknown call attempt'))
+    }
+    return this.serialized(async () => {
+      const run = await this.get(id)
+      if (!run || run.status !== 'running') throw new Error('Run has stopped accepting calls')
+      const call: CallAudit = { ...details, provider: run.agents[details.role].adapter,
+        model: run.agents[details.role].model, startedAt: new Date().toISOString() }
+      await this.appendEvent(id, { ...call, timestamp: call.startedAt, kind: 'call-started', status: 'running' })
+      return call
+    })
+  }
+
+  finishCall(id: string, call: CallAudit, status: 'validated' | 'rejected' | 'failed' | 'cancelled', category?: string) {
+    return this.serialized(async () => {
+      const finishedAt = new Date().toISOString()
+      await this.appendEvent(id, { ...call, timestamp: finishedAt, finishedAt,
+        durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(call.startedAt)),
+        kind: 'call-finished', status, ...(category ? { category } : {}) })
     })
   }
 
@@ -197,7 +296,8 @@ export class RunStore {
 
   async reconcile(id: string) {
     const run = await this.get(id)
-    if (!run || (run.status !== 'running' && run.status !== 'queued')) return run
+    if (!run) return run
+    if (run.status !== 'running' && run.status !== 'queued') return run
     return this.change(id, async fresh => {
       const directory = this.directory(id)
       fresh.artifacts = []

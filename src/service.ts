@@ -87,13 +87,14 @@ export async function openService(options: ServiceOptions = {}) {
     kick()
   } catch (e) { await release(); throw e }
 
+  const binding = (role: Role) => {
+    const adapter = config.roles[role]
+    const model = options[`${adapter}Model`]
+    return { adapter, model: model ?? null }
+  }
+
   async function enqueue(input: RunInput) {
     const pinned = await validateRequest(input)
-    const binding = (role: Role) => {
-      const adapter = config.roles[role]
-      const model = options[`${adapter}Model`]
-      return { adapter, model: model ?? null }
-    }
     const run = await store.create(pinned, { A: binding('A'), B: binding('B') })
     queue.push(run)
     kick()
@@ -109,6 +110,10 @@ export async function openService(options: ServiceOptions = {}) {
       void task.then(() => submissions.delete(task), () => submissions.delete(task))
       return task
     },
+    storageRoot: store.root,
+    reviewers: { A: binding('A'), B: binding('B') },
+    list: () => store.list(),
+    report: (id: string) => store.report(id),
     get: (id: string) => store.get(id),
     artifacts: (id: string) => store.artifacts(id),
     close() {

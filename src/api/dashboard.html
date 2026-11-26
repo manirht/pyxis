@@ -1,29 +1,422 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>RCA harness · Run inspector</title>
-  <link rel="stylesheet" href="/dashboard.css">
-  <script type="module" src="/dashboard.js"></script>
-</head>
-<body>
-  <header class="top"><div class="top-inner"><span class="mark" aria-hidden="true"></span><strong>RCA harness</strong><span class="separator" aria-hidden="true"></span><span>Run inspector</span></div></header>
-  <main>
-    <form id="lookup">
-      <label for="run-id">Run ID</label>
-      <div class="field"><input id="run-id" name="id" placeholder="Paste the ID from rca run" autocomplete="off" maxlength="128" spellcheck="false" required><button type="submit">Open run</button></div>
-    </form>
-    <p id="notice" role="status" aria-live="polite"></p>
-    <section id="run" hidden aria-labelledby="issue">
-      <div class="state"><span id="badge"></span><span id="stage"></span></div>
-      <h1 id="issue"></h1>
-      <dl id="metadata" class="metadata"></dl>
-      <div id="outcome"></div>
-      <section id="artifact-panel" hidden><h2>Saved artifacts</h2><div id="artifacts"></div></section>
-    </section>
-    <noscript>Enable JavaScript to inspect a run, or use the local run API.</noscript>
-  </main>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Pyxis · Investigations</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/dashboard.css" />
+    <script type="module" src="/dashboard.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to investigation</a>
+    <header class="mobile-bar">
+      <a class="wordmark" href="#" aria-label="Pyxis investigations"
+        ><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 30 16 16 30 2 16Z" fill="currentColor"/><path d="m16 8 4 8-4 8-4-8Z" fill="#FBFBFA"/></svg>pyxis</a
+      >
+      <button
+        id="history-toggle"
+        class="button quiet"
+        type="button"
+        aria-expanded="false"
+        aria-controls="sidebar"
+      >
+        Browse runs
+      </button>
+    </header>
+    <div class="workspace">
+      <aside id="sidebar" class="sidebar" aria-label="Investigation history">
+        <a
+          class="wordmark desktop-brand"
+          href="#"
+          aria-label="Pyxis local investigations"
+          ><svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M16 2 30 16 16 30 2 16Z" fill="currentColor" />
+            <path d="m16 8 4 8-4 8-4-8Z" fill="#FBFBFA" /></svg
+          >pyxis <span class="local-label">LOCAL</span></a
+        >
+        <div class="sidebar-content">
+          <p class="eyebrow sidebar-heading">Workspace</p>
+          <nav class="filters" aria-label="Filter investigations">
+            <button
+              type="button"
+              class="filter active"
+              data-filter="all"
+              aria-pressed="true"
+            >
+              <span>All investigations</span><span data-count="all">0</span>
+            </button>
+            <button
+              type="button"
+              class="filter"
+              data-filter="finalized"
+              aria-pressed="false"
+            >
+              <span>Finalized</span><span data-count="finalized">0</span>
+            </button>
+            <button
+              type="button"
+              class="filter"
+              data-filter="active"
+              aria-pressed="false"
+            >
+              <span>In progress</span><span data-count="active">0</span>
+            </button>
+            <button
+              type="button"
+              class="filter"
+              data-filter="attention"
+              aria-pressed="false"
+            >
+              <span>Needs attention</span><span data-count="attention">0</span>
+            </button>
+          </nav>
+          <div class="history-heading">
+            <p class="eyebrow">Recent runs</p>
+            <span id="history-count" class="meta">0 records</span>
+          </div>
+          <label class="search-field" for="search"
+            ><svg viewBox="0 0 20 20" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M8.5 2a6.5 6.5 0 1 0 4.08 11.56L17 18l1-1-4.44-4.42A6.5 6.5 0 0 0 8.5 2Zm0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Z"
+              /></svg
+            ><span class="sr-only">Search recent investigations</span
+            ><input
+              id="search"
+              type="search"
+              placeholder="Search runs…"
+              autocomplete="off"
+          /></label>
+          <ol
+            id="run-list"
+            class="run-list"
+            aria-label="Recent investigations"
+          ></ol>
+          <p id="history-empty" class="history-empty" hidden>
+            No matching investigations.
+          </p>
+          <form id="lookup" class="lookup">
+            <label for="run-id">Have a run ID?</label>
+            <div class="lookup-field">
+              <input
+                id="run-id"
+                name="id"
+                placeholder="Paste an ID"
+                maxlength="128"
+                autocomplete="off"
+                spellcheck="false"
+                required
+              /><button type="submit" aria-label="Open run by ID">Open</button>
+            </div>
+          </form>
+        </div>
+        <footer class="storage-footer">
+          <span class="storage-indicator" aria-hidden="true"></span
+          ><strong>Stored on this machine</strong>
+          <p>
+            Reports, reviews and votes stay together in your local runs folder.
+          </p>
+          <button id="copy-root" type="button" class="text-button" disabled>
+            Copy folder path <span aria-hidden="true">↗</span>
+          </button>
+        </footer>
+      </aside>
+      <main id="main" class="main" tabindex="-1">
+        <header class="page-heading">
+          <div>
+            <h1>Investigations<span class="heading-dot">.</span></h1>
+            <p class="intro">
+              Follow the evidence, from first report to final vote.
+            </p>
+          </div>
+          <div class="header-actions">
+            <button
+              id="refresh"
+              type="button"
+              class="button quiet"
+              aria-label="Refresh investigations"
+            >
+              Refresh</button
+            ><button id="new-run" type="button" class="button primary">
+              New investigation <kbd>N</kbd>
+            </button>
+          </div>
+        </header>
+        <div class="workspace-caption">
+          <p id="connection" class="connection" data-state="loading">
+            <span aria-hidden="true"></span>Connecting to local service
+          </p>
+          <p class="meta">Your source. Two independent reviewers.</p>
+        </div>
+        <section
+          class="metrics"
+          aria-label="Recent investigation totals"
+        >
+          <article class="metric">
+            <p class="eyebrow">Recent records</p>
+            <p id="total-count" class="metric-value" data-count="all">—</p>
+            <p class="metric-note">Saved in this workspace</p>
+          </article>
+          <article class="metric">
+            <p class="eyebrow">Finalized</p>
+            <p id="final-count" class="metric-value" data-count="finalized">—</p>
+            <p class="metric-note">Both reviewers approved</p>
+          </article>
+          <article class="metric">
+            <p class="eyebrow">In progress</p>
+            <p id="active-count" class="metric-value" data-count="active">—</p>
+            <p class="metric-note">Queued or investigating</p>
+          </article>
+        </section>
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden>
+          <p id="notice-text"></p>
+          <button id="retry" type="button" class="text-button">
+            Try again
+          </button>
+        </div>
+        <section id="loading-panel" class="loading-panel" aria-live="polite">
+          <span class="loading-line"></span>
+          <p>Opening your investigation workspace…</p>
+        </section>
+        <section id="empty-state" class="empty-state" hidden>
+          <div class="empty-illustration" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <h2>Start with a clear symptom.</h2>
+          <p>
+            Two reviewers inspect the same committed source, check each other’s
+            reports, and vote on a shared explanation. Every accepted finding
+            stays with its evidence.
+          </p>
+          <button id="empty-new-run" type="button" class="button primary">
+            Start an investigation
+          </button>
+          <div class="empty-steps">
+            <span><b>01</b> Describe the behavior</span
+            ><span><b>02</b> Follow both reviewers</span
+            ><span><b>03</b> Inspect the decision</span>
+          </div>
+        </section>
+        <section
+          id="run-panel"
+          class="run-panel"
+          aria-labelledby="issue"
+          hidden
+        >
+          <div class="record-topline">
+            <div class="repo-label">
+              <span class="repo-symbol" aria-hidden="true"></span
+              ><span id="repo-name"></span>
+            </div>
+            <div class="record-id">
+              <span id="short-id"></span
+              ><button
+                id="copy-id"
+                class="text-button"
+                type="button"
+                aria-label="Copy ID to clipboard"
+              >
+                Copy ID
+              </button>
+            </div>
+          </div>
+          <div class="record-heading">
+            <div class="record-state">
+              <span id="status-badge" class="badge"></span
+              ><span id="record-updated" class="meta"></span>
+            </div>
+            <h2 id="issue" tabindex="-1"></h2>
+            <details id="issue-details" class="issue-details" hidden>
+              <summary>Read the complete issue</summary>
+              <p id="full-issue"></p>
+            </details>
+            <div id="revision-meta" class="revision-meta"></div>
+          </div>
+          <ol
+            id="timeline"
+            class="timeline"
+            aria-label="Investigation progress"
+          ></ol>
+          <div id="reviewer-strip" class="reviewer-strip"></div>
+          <div class="record-body">
+            <div class="tabs" role="tablist" aria-label="Investigation details">
+              <button
+                id="tab-findings"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="panel-findings"
+                data-tab="findings"
+              >
+                Findings</button
+              ><button
+                id="tab-reviewers"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-reviewers"
+                data-tab="reviewers"
+                tabindex="-1"
+              >
+                Reviewer reports</button
+              ><button
+                id="tab-votes"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-votes"
+                data-tab="votes"
+                tabindex="-1"
+              >
+                Votes & revisions</button
+              ><button
+                id="tab-files"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-files"
+                data-tab="files"
+                tabindex="-1"
+              >
+                Saved files <span id="file-count" class="tab-count">0</span>
+              </button>
+            </div>
+            <section
+              id="panel-findings"
+              class="tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-findings"
+              tabindex="0"
+            ></section>
+            <section
+              id="panel-reviewers"
+              class="tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-reviewers"
+              tabindex="0"
+              hidden
+            ></section>
+            <section
+              id="panel-votes"
+              class="tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-votes"
+              tabindex="0"
+              hidden
+            ></section>
+            <section
+              id="panel-files"
+              class="tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-files"
+              tabindex="0"
+              hidden
+            ></section>
+          </div>
+          <footer class="record-footer">
+            <span id="cleanup-note"></span
+            ><span>Local record · source-backed review</span>
+          </footer>
+        </section>
+        <footer class="page-footer">
+          <span>PYXIS</span>
+          <p>Agreement is recorded. Evidence stays inspectable.</p>
+        </footer>
+        <noscript
+          >Enable JavaScript to browse investigations, or use the local run
+          API.</noscript
+        >
+      </main>
+    </div>
+    <dialog id="new-run-dialog" aria-labelledby="new-run-title">
+      <form id="create-form">
+        <header class="dialog-heading">
+          <div>
+            <p class="eyebrow">New investigation</p>
+            <h2 id="new-run-title">What happened?</h2>
+          </div>
+          <button
+            id="close-dialog"
+            class="icon-button"
+            type="button"
+            aria-label="Close new investigation"
+          >
+            ×
+          </button>
+        </header>
+        <p class="dialog-intro">
+          Give the reviewers a repository and a specific behavior to
+          investigate.
+        </p>
+        <label for="repo">Repository folder</label
+        ><input
+          id="repo"
+          aria-describedby="repo-help"
+          name="repo"
+          placeholder="/absolute/path/to/repository"
+          required
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p id="repo-help" class="field-help">
+          Use the absolute path to a local Git checkout.
+        </p>
+        <label for="new-issue">Observed behavior</label
+        ><textarea
+          id="new-issue"
+          name="issue"
+          rows="5"
+          maxlength="32768"
+          placeholder="Describe the input, what happened, and what you expected."
+          required
+        ></textarea>
+        <details class="revision-options">
+          <summary>
+            Compare revisions <span class="meta">optional</span>
+          </summary>
+          <div class="revision-fields">
+            <div>
+              <label for="head">Head revision</label
+              ><input
+                id="head"
+                name="head"
+                placeholder="HEAD"
+                spellcheck="false"
+              />
+            </div>
+            <div>
+              <label for="base">Base revision</label
+              ><input
+                id="base"
+                name="base"
+                placeholder="e.g. main"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+          <p class="field-help">
+            Only committed source is inspected. Leave head empty to use HEAD.
+          </p>
+        </details>
+        <div class="provider-note">
+          <p class="eyebrow">Configured reviewers</p>
+          <p id="configured-reviewers">Loading reviewer configuration…</p>
+          <p class="field-help">
+            Starting a run calls these providers and uses their quota.
+          </p>
+        </div>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <footer class="dialog-actions">
+          <button id="cancel-dialog" class="button quiet" type="button">
+            Cancel</button
+          ><button id="create-submit" class="button primary" type="submit">
+            Start investigation
+          </button>
+        </footer>
+      </form>
+    </dialog>
+    <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
+  </body>
 </html>

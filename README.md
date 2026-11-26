@@ -4,6 +4,12 @@ Pyxis investigates a reported bug in an existing local Git repository. Give it t
 
 The harness runs locally on Node.js and calls installed agent CLIs. Their configured model providers can receive the issue text, code excerpts, and investigation results. The default reviewers are Claude Code and Codex. GitHub Copilot can fill either role. See the [installation and provider setup guide](SETUP.md).
 
+## Browse your run workspace
+
+Start `rca serve` and open the [local dashboard](http://127.0.0.1:4317/). Browse recent investigations, follow each workflow stage, and read the accepted reports, peer critiques, proposals, ballots, and terminal result. Each run also has a downloadable Markdown report.
+
+The default workspace is this harness repository’s ignored `runs/` folder, even when the investigated repository is elsewhere. If a local `runs/START-HERE.md` exists, it indexes imported evidence. These ignored files are not included in Git clones. See [the run record guide](docs/RUN-RECORDS.md) for the file layout, privacy boundaries, and `RCA_RUNS_DIR` override.
+
 ## Run your first investigation
 
 After setup, start the service in one terminal and leave it running.
@@ -58,7 +64,9 @@ Each role gets at most three attempts for a stage. Invalid model JSON, schema er
 | Request | Behavior |
 | --- | --- |
 | `POST /runs` | Send JSON with an absolute `repo` path and an `issue` string. Optional fields are `base` and `head`. Returns HTTP 202 with `runId` and `status`. |
+| `GET /runs` | Lists up to 100 recent run records, newest first, the active `storageRoot`, and configured reviewers for new submissions. |
 | `GET /runs/{id}` | Returns the current `stage` and `status`. Poll while the status is `queued` or `running`. |
+| `GET /runs/{id}/report` | Downloads the readable Markdown report as `pyxis-<id>-report.md`. |
 | `GET /runs/{id}/artifacts` | Returns published JSON documents keyed by relative filename, including partial results. |
 
 Using the variables from the example above:
@@ -72,7 +80,13 @@ $artifacts = Invoke-RestMethod "$url/runs/$($run.runId)/artifacts"
 $artifacts.'result.json' | ConvertTo-Json -Depth 12
 ```
 
-Each run has a durable folder under `runs/<run-id>/` in the harness installation. `run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the accepted review history. `attempts/<stage>/<role>-<attempt>.json` records safe rejection categories, validation feedback, and whether another attempt was planned on every platform. On POSIX, `diagnostics/` retains rejected model responses in owner-only files (mode 0600), excluded from the artifacts API. On Windows, raw rejected responses are not saved: POSIX modes do not restrict inherited Windows ACLs, and no opt-in bypass is provided. Both safe rejection records and accepted outputs survive restart. Active work is marked interrupted on restart, rather than replaying a partially completed stage. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
+Each run has a durable folder under `runs/<run-id>/` in the harness installation. `REPORT.md` presents the accepted review history, and `events.jsonl` records lifecycle and provider-call metadata. Workflow prompts are not recorded.
+
+`run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the accepted review history. `attempts/<stage>/<role>-<attempt>.json` records safe rejection categories, validation feedback, and whether another attempt was planned on every platform.
+
+Both safe rejection records and accepted outputs survive restart. Active work is marked interrupted on restart, rather than replaying a partially completed stage. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
+
+See [the run record guide](docs/RUN-RECORDS.md) for artifact privacy, platform differences, and sharing boundaries. Keep future validation logs, screenshots, and detailed execution evidence under the ignored `runs/` folder as well.
 
 ## Code map for contributors and AI agents
 

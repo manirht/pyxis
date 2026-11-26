@@ -1,4 +1,4 @@
-import { digestOf, RunStore } from '../store.ts'
+import { digestOf, RunStore, type CallAudit } from '../store.ts'
 import { prepareWorkspace, removeWorkspace, validateEvidence } from '../workspace.ts'
 import type { Adapters, AgentStage, Proposal, Role, RunError, RunRecord, StageOutput, Vote } from '../types.ts'
 import { makePrompt } from './prompts.ts'
@@ -38,8 +38,11 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
       for (let attempt = 1; attempt <= MAX_MODEL_OUTPUT_ATTEMPTS; attempt++) {
         signal.throwIfAborted()
         let raw: unknown
+        let audit: CallAudit | undefined
         try {
           const prompt = makePrompt(run, role, action, withContext ? workspace.context : '', material, feedback)
+          audit = await store.startCall(id, { stage, action, role, attempt })
+          signal.throwIfAborted()
           raw = await adapters[role]({ runId: id, role, stage: action, cwd: workspace.cwd,
             evidenceDir: workspace.evidenceDir, prompt, schema, schemaPath }, signal)
           signal.throwIfAborted()
@@ -47,8 +50,14 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
           const value = parseOutput(action, raw, target)
           if ('evidence' in value) await validateEvidence(run.input, value.evidence, signal)
           signal.throwIfAborted()
+          await store.finishCall(id, audit, 'validated')
           return value
         } catch (e) {
+          if (audit) {
+            await store.finishCall(id, audit, e instanceof ModelOutputError ? 'rejected' : signal.aborted ? 'cancelled' : 'failed',
+              e instanceof ModelOutputError ? e.category : undefined)
+          }
+
           if (!(e instanceof ModelOutputError)) throw e
           const willRetry = !signal.aborted && e.retryable && attempt < MAX_MODEL_OUTPUT_ATTEMPTS
           const response = e.response ?? raw ?? null

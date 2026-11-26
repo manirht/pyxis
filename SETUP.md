@@ -41,15 +41,26 @@ In the first terminal, run `rca serve`. In a second terminal, change directory t
 rca run --repo . --issue "Describe the observed behavior and what you expected."
 ```
 
-Open the [local dashboard](http://127.0.0.1:4317/) and enter the returned run ID. See the [README](README.md) for the diagram, Git comparison options, and a complete scripted example. If you skipped `npm link`, run `npm run rca -- serve` from the harness directory and submit with `npm run rca -- run --repo <absolute-target-path> --issue "…"` from that same harness directory.
+Open the [local dashboard](http://127.0.0.1:4317/) to browse recent investigations or open the returned run ID. Download a run’s Markdown report from its detail view. See the [README](README.md) for the diagram, Git comparison options, and a complete scripted example. If you skipped `npm link`, run `npm run rca -- serve` from the harness directory and submit with `npm run rca -- run --repo <absolute-target-path> --issue "…"` from that same harness directory.
 
 Stop the service with Ctrl+C. Let active investigations finish before restarting to apply a configuration change. If port 4317 is occupied, use the same `--port` on both `serve` and `run`, and open the dashboard on that port.
 
 ## Settings and checks
 
+By default, durable records are written to this harness repository’s `runs/` folder, which is ignored by Git. The target repository passed to `--repo` does not change that location. Keep future validation logs, screenshots, and detailed run evidence under this ignored folder too. If `runs/START-HERE.md` exists locally, it indexes imported evidence; ignored records are not included in Git clones.
+
 Use `RCA_RUNS_DIR` to change the durable run directory, `RCA_TEMP_ROOT` for temporary worktrees, and `RCA_STAGE_TIMEOUT_MS` for stage deadlines in milliseconds. `RCA_CLAUDE_MODEL`, `RCA_CODEX_MODEL`, and `RCA_COPILOT_MODEL` override their respective CLI model defaults. Set these in the terminal that launches the service.
 
-A stage permits at most three attempts per reviewer (the initial call plus up to two fresh calls) for recoverable model-output errors. `stageTimeoutMs` / `RCA_STAGE_TIMEOUT_MS` remains one deadline shared by all attempts in that stage, including both concurrent reviewers. Retries can consume additional provider quota. Inspect the run's `attempts/` artifacts for safe rejection feedback on every platform. Raw rejected responses are saved separately in owner-only POSIX `diagnostics/` files and are not returned by the API. Raw diagnostic persistence is disabled on Windows because POSIX file modes do not enforce private Windows ACLs. See the [README](README.md) for terminal failure conditions.
+For example, launch the service with an explicit workspace from the harness root in PowerShell:
+
+```powershell
+$env:RCA_RUNS_DIR = Join-Path (Get-Location) "runs"
+rca serve
+```
+
+On macOS/Linux, from the harness root, use `RCA_RUNS_DIR="$PWD/runs" rca serve`. Set the override in the service terminal; changing it in the submission terminal does not change the running service. A custom directory outside this repository needs its own ignore and access controls. See [the run record guide](docs/RUN-RECORDS.md) for readable reports, local events, and sharing guidance.
+
+A stage permits at most three attempts per reviewer (the initial call plus up to two fresh calls) for recoverable model-output errors. `stageTimeoutMs` / `RCA_STAGE_TIMEOUT_MS` remains one deadline shared by all attempts in that stage, including both concurrent reviewers. Retries can consume additional provider quota. Inspect the run's `attempts/` artifacts for safe rejection feedback. See the [README](README.md) for terminal failure conditions.
 
 Run `npm run check` and `npm test` from the harness directory for type checking and local regression tests. `npm run test:live` runs a real investigation on a generated Git fixture. `npm run test:permissions -- copilot` checks the installed Copilot adapter. Both live commands can consume provider quota.
 

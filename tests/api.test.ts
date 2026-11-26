@@ -32,6 +32,10 @@ async function fixture(t: TestContext, overrides: Partial<ApiService> = {}) {
   const saved = { 'reports/A.json': { hypothesis: '<script>source text</script>', evidence: [], gaps: [] } }
   const submissions: RunInput[] = []
   const service: ApiService = {
+    storageRoot: resolve('runs'),
+    reviewers: record.agents,
+    async list() { return [record] },
+    async report(id) { return id === record.id ? '# Fixture report\n' : null },
     async submit(input) { submissions.push(input); return record },
     async get(id) { return id === record.id ? record : null },
     async artifacts() { return saved },
@@ -118,11 +122,60 @@ test('the dashboard and its script and stylesheet are available on loopback', as
   const { origin } = await fixture(t)
   const response = await fetch(origin + '/')
   assert.match(response.headers.get('Content-Security-Policy') ?? '', /frame-ancestors 'none'/)
-  assert.match(await response.text(), /<label for="run-id">Run ID<\/label>/)
-  for (const path of ['/dashboard.js', '/dashboard.css']) {
+  assert.match(response.headers.get('Content-Security-Policy') ?? '', /img-src 'self'/)
+  const page = await response.text()
+  assert.match(page, /<main id="main"/)
+  assert.match(page, /for="run-id"/)
+  assert.match(page, /id="new-run"/)
+  for (const path of ['/dashboard.js', '/dashboard.css', '/favicon.svg']) {
     const asset = await fetch(origin + path)
     assert.equal(asset.status, 200)
     assert.equal(asset.headers.get('X-Content-Type-Options'), 'nosniff')
     assert.ok((await asset.text()).length > 0)
+  }
+})
+
+
+test('run history and report downloads retain local-only read protections', async t => {
+  const { origin, record } = await fixture(t)
+  const listing = await fetch(origin + '/runs')
+  assert.equal(listing.status, 200)
+  assert.deepEqual(await listing.json(), { runs: [record], storageRoot: resolve('runs'), reviewers: record.agents })
+  const report = await fetch(origin + '/runs/' + record.id + '/report')
+  assert.equal(report.status, 200)
+  assert.equal(report.headers.get('Content-Type'), 'text/markdown; charset=utf-8')
+  assert.equal(report.headers.get('Content-Disposition'), 'attachment; filename="pyxis-fixture-run-report.md"')
+  assert.equal(report.headers.get('Cache-Control'), 'no-store')
+  assert.equal(await report.text(), '# Fixture report\n')
+  assert.equal((await fetch(origin + '/runs/missing/report')).status, 404)
+  for (const path of ['/runs', '/runs/' + record.id + '/report']) {
+    assert.equal((await fetch(origin + path, { headers: { Origin: 'https://unrelated.invalid' } })).status, 403)
+    const invalidHost = await new Promise<number>((resolveStatus, reject) => {
+      const request = httpRequest(origin + path, { headers: { Host: 'unrelated.invalid' } }, response => {
+        response.resume(); response.once('end', () => resolveStatus(response.statusCode!))
+      })
+      request.once('error', reject); request.end()
+    })
+    assert.equal(invalidHost, 403)
+  }
+  const method = await fetch(origin + '/runs', { method: 'DELETE' })
+  assert.equal(method.status, 405)
+  assert.equal(method.headers.get('Allow'), 'GET, POST')
+  assert.equal((await fetch(origin + '/runs/' + record.id + '/report', { method: 'POST' })).status, 405)
+  for (const path of ['/runs/' + record.id + '/prompts/investigate/A-1.txt',
+    '/runs/' + record.id + '/diagnostics/investigate/A-1.json', '/runs/' + record.id + '/events.jsonl']) {
+    assert.equal((await fetch(origin + path)).status, 404)
+  }
+})
+
+test('history and report storage errors return generic messages', async t => {
+  const { origin } = await fixture(t, {
+    async list() { throw new Error('PRIVATE_STORAGE_DETAIL') },
+    async report() { throw new Error('PRIVATE_PROMPT_DETAIL') },
+  })
+  for (const path of ['/runs', '/runs/fixture-run/report']) {
+    const response = await fetch(origin + path)
+    assert.equal(response.status, 500)
+    assert.deepEqual(await response.json(), { error: 'The local service could not complete the request.' })
   }
 })
