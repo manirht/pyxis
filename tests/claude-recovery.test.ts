@@ -86,3 +86,15 @@ test('Claude completed empty output recovers through the runner without cancelli
   assert.equal((artifacts['attempts/investigate/A-1.json'] as { category: string }).category, 'empty')
   assert.ok(artifacts['reports/B.json'])
 })
+
+test('malformed or blank Claude CLI output is terminal, not a retryable model answer', async () => {
+  for (const raw of ['', '   ', 'not json', '{"type":"result"']) {
+    await assert.rejects(claudeAdapter(undefined, async () => raw)(call, new AbortController().signal), error =>
+      error instanceof Error && !(error instanceof ModelOutputError))
+  }
+})
+
+test('wrong-target errors cannot opt into model-answer retries', () => {
+  assert.equal(new ModelOutputError('vote-target', 'Wrong proposal').retryable, false)
+  assert.equal(new ModelOutputError('schema', 'Bad shape').retryable, true)
+})

@@ -84,7 +84,7 @@ Each run has a durable folder under `runs/<run-id>/` in the harness installation
 
 `run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the accepted review history. `attempts/<stage>/<role>-<attempt>.json` records safe rejection categories, validation feedback, and whether another attempt was planned on every platform.
 
-On POSIX, `diagnostics/` retains rejected model responses in owner-only files (mode 0600), excluded from the artifacts API. On Windows, raw rejected responses are not saved: POSIX modes do not restrict inherited Windows ACLs, and no opt-in bypass is provided. Legacy diagnostic files are preserved locally and remain excluded from the API; review their access permissions before sharing an existing run directory.
+On POSIX, `diagnostics/` retains rejected model responses in owner-only files (mode 0600), excluded from the artifacts API. On Windows, raw rejected responses are not saved: POSIX modes do not restrict inherited Windows ACLs, and no opt-in bypass is provided.
 
 Both safe rejection records and accepted outputs survive restart. Active work is marked interrupted on restart, rather than replaying a partially completed stage. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
 

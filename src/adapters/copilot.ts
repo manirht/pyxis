@@ -27,7 +27,6 @@ export function copilotAdapter(model?: string, invoke: InvokeProvider = invokePr
     // Injected invokers can return buffered stdout instead of forwarding chunks.
     if (buffered) stream.write(Buffer.from(buffered, 'utf8'));
     const raw = stream.content(exitCode).trim();
-    if (exitCode === 1 && raw) throw new Error('GitHub Copilot returned an invalid or incomplete JSON event stream.');
     const fence = /^`{3}(?:json)?[^\S\r\n]*\r?\n([\s\S]*?)\r?\n`{3}$/i.exec(raw);
     return parseOutput(fence ? fence[1] : raw, 'GitHub Copilot');
   };

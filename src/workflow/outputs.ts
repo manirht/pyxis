@@ -22,7 +22,7 @@ export function parseOutput<S extends AgentStage>(stage: S, raw: unknown,
     const vote = raw as Partial<Vote>
     if ((typeof vote.version === 'number' && vote.version !== target.version) ||
         (typeof vote.digest === 'string' && vote.digest !== target.digest))
-      throw new ModelOutputError('vote-target', 'Vote targets a different proposal', raw, false)
+      throw new ModelOutputError('vote-target', 'Vote targets a different proposal', raw)
   }
   const { validate } = shapes[stage]
   if (!validate(raw)) throw new ModelOutputError('schema', 'Invalid ' + stage + ' output: ' + ajv.errorsText(validate.errors))

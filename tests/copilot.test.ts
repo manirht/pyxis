@@ -277,3 +277,14 @@ test('the minimum bundled version still requires supported local-session flags a
   const fixture = await bundledCopilotFixture(t, '1.0.97', '--available-tools --sync-session', heavyOutput)
   assert.deepEqual(await fixture.invoke(), report)
 })
+
+test('bundled version parsing accepts stable future versions and distinguishes unknown banners from old versions', async () => {
+  const { checkCopilotVersion } = await import('../src/adapters/process.ts')
+  for (const version of ['1.0.97', '1.1.0', '2.0.0', 'v1.0.97', "GitHub Copilot CLI 1.0.115.\r\nRun 'copilot update' to check for updates.\r\n"]) {
+    assert.doesNotThrow(() => checkCopilotVersion(version))
+  }
+  assert.throws(() => checkCopilotVersion('1.0.96'), /Update the bundled CLI/)
+  for (const version of ['unknown banner', '1.0.97-preview.1', '9007199254740993.0.0']) {
+    assert.throws(() => checkCopilotVersion(version), /version output was not recognized/)
+  }
+})
