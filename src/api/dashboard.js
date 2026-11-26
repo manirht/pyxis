@@ -30,7 +30,6 @@ let historyController,
   toastTimer,
   lastFingerprint,
   historyFingerprint;
-let observer;
 
 function el(tag, text, className) {
   const node = document.createElement(tag);
@@ -45,23 +44,6 @@ function action(text, name, value, className = "button quiet") {
   button.dataset.action = name;
   if (value !== undefined) button.dataset.value = value;
   return button;
-}
-
-function reveal() {
-  const blocks = document.querySelectorAll(".reveal:not(.is-visible)");
-  if (!observer && "IntersectionObserver" in window)
-    observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries)
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            observer.unobserve(entry.target);
-          }
-      },
-      { threshold: 0.02 },
-    );
-  for (const block of blocks)
-    observer ? observer.observe(block) : block.classList.add("is-visible");
 }
 
 function basename(path = "") {
@@ -170,9 +152,6 @@ function renderHistory() {
   };
   for (const node of document.querySelectorAll("[data-count]"))
     node.textContent = counts[node.dataset.count] ?? 0;
-  $("total-count").textContent = counts.all;
-  $("final-count").textContent = counts.finalized;
-  $("active-count").textContent = counts.active;
   $("history-count").textContent =
     `${runs.length} record${runs.length === 1 ? "" : "s"}`;
   for (const node of document.querySelectorAll("[data-filter]")) {
@@ -766,7 +745,6 @@ function renderRecord(record, artifacts) {
   $("empty-state").hidden = true;
   setTab(state.tab);
   renderHistory();
-  reveal();
 }
 
 async function refreshRun(id, signal) {
@@ -832,7 +810,6 @@ function selectRun(id) {
     } else {
       $("loading-panel").hidden = true;
       $("empty-state").hidden = false;
-      reveal();
     }
     return;
   }
@@ -1104,6 +1081,4 @@ $("create-form").addEventListener("submit", async (event) => {
   }
 });
 
-document.documentElement.classList.add("js-ready");
-reveal();
 loadHistory(true);

@@ -124,7 +124,7 @@
         </footer>
       </aside>
       <main id="main" class="main" tabindex="-1">
-        <header class="page-heading reveal">
+        <header class="page-heading">
           <div>
             <p class="eyebrow">Root cause workspace</p>
             <h1>Investigations<span class="heading-dot">.</span></h1>
@@ -152,22 +152,22 @@
           <p class="meta">Your source. Two independent reviewers.</p>
         </div>
         <section
-          class="metrics reveal"
+          class="metrics"
           aria-label="Recent investigation totals"
         >
           <article class="metric">
             <p class="eyebrow">Recent records</p>
-            <p id="total-count" class="metric-value">—</p>
+            <p id="total-count" class="metric-value" data-count="all">—</p>
             <p class="metric-note">Saved in this workspace</p>
           </article>
           <article class="metric">
             <p class="eyebrow">Finalized</p>
-            <p id="final-count" class="metric-value">—</p>
+            <p id="final-count" class="metric-value" data-count="finalized">—</p>
             <p class="metric-note">Both reviewers approved</p>
           </article>
           <article class="metric">
             <p class="eyebrow">In progress</p>
-            <p id="active-count" class="metric-value">—</p>
+            <p id="active-count" class="metric-value" data-count="active">—</p>
             <p class="metric-note">Queued or investigating</p>
           </article>
         </section>
@@ -181,7 +181,7 @@
           <span class="loading-line"></span>
           <p>Opening your investigation workspace…</p>
         </section>
-        <section id="empty-state" class="empty-state reveal" hidden>
+        <section id="empty-state" class="empty-state" hidden>
           <div class="empty-illustration" aria-hidden="true">
             <span></span><span></span><span></span>
           </div>
@@ -203,7 +203,7 @@
         </section>
         <section
           id="run-panel"
-          class="run-panel reveal"
+          class="run-panel"
           aria-labelledby="issue"
           hidden
         >

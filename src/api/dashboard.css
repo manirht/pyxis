@@ -36,6 +36,9 @@ input,
 summary {
   -webkit-tap-highlight-color: transparent;
 }
+summary {
+  min-height: 26px;
+}
 button {
   cursor: pointer;
 }
@@ -119,7 +122,7 @@ svg {
   padding: 35px 25px 30px;
 }
 .local-label {
-  font: 9px var(--mono);
+  font: 12px var(--mono);
   letter-spacing: 1px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -136,7 +139,7 @@ svg {
   scrollbar-color: #d8d7d1 transparent;
 }
 .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   letter-spacing: 1.35px;
   text-transform: uppercase;
@@ -175,7 +178,7 @@ svg {
   background: #f0f0ed;
 }
 .filter > span:last-child {
-  font: 10px var(--mono);
+  font: 12px var(--mono);
   color: var(--muted);
 }
 .history-heading {
@@ -187,7 +190,7 @@ svg {
 }
 .meta {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .search-field {
@@ -212,7 +215,7 @@ svg {
 .search-field input {
   min-width: 0;
   width: 100%;
-  font-size: 11px;
+  font-size: 12px;
   padding: 10px 0;
   border: 0;
   background: transparent;
@@ -258,7 +261,7 @@ svg {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   min-width: 0;
 }
@@ -289,7 +292,7 @@ svg {
 }
 .run-time {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
 }
 .history-empty {
   font-size: 12px;
@@ -301,7 +304,7 @@ svg {
   padding: 22px 8px;
 }
 .lookup label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .lookup-field {
@@ -316,24 +319,24 @@ svg {
   background: #fff;
   border-radius: 4px;
   padding: 8px;
-  font: 10px var(--mono);
+  font: 12px var(--mono);
 }
 .lookup-field button {
   border: 1px solid var(--border);
   border-radius: 4px;
   background: #fff;
-  font-size: 10px;
+  font-size: 12px;
   padding: 5px 10px;
 }
 .storage-footer {
   border-top: 1px solid var(--border);
   padding: 20px 26px 24px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   background: #fbfbfa;
 }
 .storage-footer strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 .storage-footer p {
@@ -350,10 +353,15 @@ svg {
   margin-right: 6px;
 }
 .text-button {
+  min-height: 26px;
+  min-width: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   padding: 2px 0;
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   color: #4d594e;
   text-align: left;
@@ -396,7 +404,7 @@ svg {
   color: #909b7e;
 }
 .intro {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
   color: var(--muted);
   margin: 0;
@@ -412,7 +420,7 @@ svg {
   border-radius: 5px;
   min-height: 37px;
   padding: 9px 14px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   line-height: 1.4;
   display: inline-flex;
@@ -444,7 +452,7 @@ svg {
   background: #f0f0ec;
 }
 .button kbd {
-  font: 9px var(--mono);
+  font: 12px var(--mono);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 2px 4px;
@@ -461,7 +469,7 @@ svg {
   margin: 0;
 }
 .connection {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -499,7 +507,7 @@ svg {
   color: #2b3029;
 }
 .metric-note {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   margin: 0;
   line-height: 1.5;
@@ -517,7 +525,7 @@ svg {
 }
 .notice p {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -552,7 +560,7 @@ svg {
   color: var(--ink);
 }
 .empty-state > p:not(.eyebrow) {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.9;
   color: var(--muted);
   max-width: 500px;
@@ -596,12 +604,12 @@ svg {
   padding-top: 24px;
   display: flex;
   gap: 25px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   flex-wrap: wrap;
 }
 .empty-steps b {
-  font: 10px var(--mono);
+  font: 12px var(--mono);
   margin-right: 8px;
   color: #666c60;
 }
@@ -625,7 +633,7 @@ svg {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
 }
 .repo-label > span:last-child {
@@ -656,12 +664,12 @@ svg {
   display: flex;
   align-items: center;
   gap: 10px;
-  font: 9px var(--mono);
+  font: 12px var(--mono);
   color: var(--muted);
   white-space: nowrap;
 }
 .record-id button {
-  font-size: 10px;
+  font-size: 12px;
 }
 .record-heading {
   padding: 29px 30px 0;
@@ -677,7 +685,7 @@ svg {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: 0.7px;
@@ -728,11 +736,11 @@ svg {
   margin: 10px 0;
 }
 .issue-details summary {
-  font-size: 11px;
+  font-size: 12px;
 }
 .issue-details p {
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
@@ -742,7 +750,7 @@ svg {
   gap: 9px 22px;
   margin: 15px 0 0;
   color: var(--muted);
-  font: 10px/1.7 var(--mono);
+  font: 12px/1.7 var(--mono);
 }
 .revision-meta span {
   overflow-wrap: anywhere;
@@ -766,7 +774,7 @@ svg {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 12px;
   color: #666c60;
   min-width: 0;
   line-height: 1.5;
@@ -785,7 +793,7 @@ svg {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font: 8px var(--mono);
+  font: 12px var(--mono);
   flex: none;
   background: #fff;
   z-index: 1;
@@ -811,6 +819,11 @@ svg {
   border-color: var(--red);
   color: var(--red-ink);
 }
+.timeline .unresolved .step-number {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--yellow-ink);
+}
 .reviewer-strip {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -828,7 +841,7 @@ svg {
   background: #fbfbfa;
 }
 .role-letter {
-  font: 11px var(--mono);
+  font: 12px var(--mono);
   width: 29px;
   height: 29px;
   display: grid;
@@ -848,20 +861,20 @@ svg {
 }
 .reviewer-info strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .reviewer-info p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   margin: 2px 0 0;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .reviewer-status {
-  font-size: 10px;
+  font-size: 12px;
   color: #68755b;
   white-space: nowrap;
 }
@@ -879,7 +892,7 @@ svg {
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   padding: 17px 0 15px;
   white-space: nowrap;
@@ -895,8 +908,12 @@ svg {
 .tabs button:hover {
   color: #222;
 }
+.tabs button:focus-visible {
+  outline-offset: -5px;
+  border-radius: 4px;
+}
 .tab-count {
-  font: 8px var(--mono);
+  font: 12px var(--mono);
   padding: 2px 4px;
   min-width: 17px;
   border-radius: 3px;
@@ -918,7 +935,7 @@ svg {
   min-width: 0;
 }
 .section-kicker {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   letter-spacing: 1.1px;
   text-transform: uppercase;
@@ -934,7 +951,7 @@ svg {
   overflow-wrap: anywhere;
 }
 .prose {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.95;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -949,12 +966,12 @@ svg {
   margin-top: 24px;
 }
 .supporting-note h4 {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   margin: 0 0 8px;
 }
 .plain-list {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   list-style: none;
   padding: 0;
@@ -984,7 +1001,7 @@ svg {
   margin: 0 0 5px;
 }
 .source-note {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.8;
   margin: 0 0 18px;
@@ -997,25 +1014,25 @@ svg {
   padding-top: 0;
 }
 .evidence-item summary {
-  font: 10px/1.7 var(--mono);
+  font: 12px/1.7 var(--mono);
   overflow-wrap: anywhere;
   padding-right: 10px;
   color: #4b5843;
 }
 .evidence-item summary > span {
   display: block;
-  font: 9px/1.7 var(--mono);
+  font: 12px/1.7 var(--mono);
   color: var(--muted);
   padding-left: 0;
   margin-top: 4px;
 }
 .evidence-item pre {
-  font-size: 10px;
+  font-size: 12px;
   max-height: 310px;
   margin-top: 13px;
 }
 .commit-note {
-  font: 9px/1.8 var(--mono);
+  font: 12px/1.8 var(--mono);
   color: var(--muted);
   overflow-wrap: anywhere;
   margin: 9px 0;
@@ -1032,19 +1049,19 @@ svg {
   min-width: 0;
 }
 .file-location p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   margin: 0 0 7px;
   color: var(--muted);
 }
 .file-location code {
   display: block;
-  font: 9px/1.8 var(--mono);
+  font: 12px/1.8 var(--mono);
   overflow-wrap: anywhere;
   color: #59634f;
 }
 .digest {
-  font: 9px/1.8 var(--mono);
+  font: 12px/1.8 var(--mono);
   color: #666c60;
   overflow-wrap: anywhere;
   padding-top: 18px;
@@ -1074,28 +1091,28 @@ svg {
   font-weight: 550;
 }
 .review-card-heading p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   margin: 3px 0 0;
 }
 .review-card h4 {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   margin: 20px 0 10px;
 }
 .review-card .prose {
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.9;
 }
 .review-card .section-kicker {
   margin-top: 18px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .review-card .evidence-item summary {
-  font-size: 10px;
+  font-size: 12px;
 }
 .review-card .plain-list {
-  font-size: 10px;
+  font-size: 12px;
 }
 .empty-content {
   padding: 30px 0;
@@ -1120,17 +1137,17 @@ svg {
   margin-top: 20px;
 }
 .attempt-note h4 {
-  font-size: 11px;
+  font-size: 12px;
   margin: 0 0 7px;
 }
 .attempt-note p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   margin: 3px 0;
   overflow-wrap: anywhere;
 }
 .attempt-note .meta {
-  font: 9px var(--mono);
+  font: 12px var(--mono);
 }
 .votes-heading {
   display: flex;
@@ -1169,10 +1186,10 @@ svg {
 .vote-card .digest {
   padding-top: 10px;
   margin-top: 15px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .vote-note {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--muted);
   margin: 18px 0 0;
@@ -1190,7 +1207,7 @@ svg {
   letter-spacing: -0.6px;
 }
 .files-header p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   color: var(--muted);
   max-width: 440px;
@@ -1202,7 +1219,7 @@ svg {
   flex-shrink: 0;
 }
 .download-actions .button {
-  font-size: 10px;
+  font-size: 12px;
   padding: 8px 12px;
 }
 .path-card {
@@ -1223,7 +1240,7 @@ svg {
   display: block;
   white-space: normal;
   overflow-wrap: anywhere;
-  font: 10px/1.8 var(--mono);
+  font: 12px/1.8 var(--mono);
 }
 .path-card .text-button {
   white-space: nowrap;
@@ -1233,7 +1250,7 @@ svg {
   border-bottom: 1px solid var(--border);
 }
 .artifact summary {
-  font: 11px/1.8 var(--mono);
+  font: 12px/1.8 var(--mono);
   overflow-wrap: anywhere;
   color: #475440;
 }
@@ -1242,7 +1259,7 @@ svg {
   margin: 14px 0 7px;
 }
 pre {
-  font: 10px/1.8 var(--mono);
+  font: 12px/1.8 var(--mono);
   background: #f7f7f3;
   color: #47503e;
   padding: 14px 16px;
@@ -1280,7 +1297,7 @@ details[open] > summary:after {
   gap: 20px;
   padding: 15px 30px;
   border-top: 1px solid var(--border);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   color: #666c60;
 }
@@ -1294,11 +1311,11 @@ details[open] > summary:after {
   margin-top: 28px;
   padding-top: 22px;
   color: #666c60;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
 }
 .page-footer > span {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 2.5px;
   font-weight: 600;
 }
@@ -1342,14 +1359,14 @@ dialog form {
   padding: 3px 5px;
 }
 .dialog-intro {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
   color: var(--muted);
   margin: 16px 0 23px;
 }
 dialog label {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   margin: 20px 0 8px;
 }
@@ -1369,14 +1386,14 @@ dialog textarea {
 dialog input[name="repo"],
 .revision-fields input {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
 }
 dialog textarea {
   resize: vertical;
   min-height: 110px;
 }
 .field-help {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.8;
   margin: 7px 0;
@@ -1387,11 +1404,11 @@ dialog textarea {
   margin-top: 21px;
 }
 .revision-options summary {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 .revision-options summary > .meta {
-  font-size: 10px;
+  font-size: 12px;
   margin-left: 6px;
 }
 .revision-fields {
@@ -1407,15 +1424,15 @@ dialog textarea {
   margin-top: 22px;
 }
 .provider-note > p:nth-child(2) {
-  font-size: 11px;
+  font-size: 14px;
   margin: 7px 0;
   line-height: 1.7;
 }
 .provider-note .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
 }
 .provider-note .field-help {
-  font-size: 10px;
+  font-size: 12px;
   margin-bottom: 0;
 }
 .dialog-actions {
@@ -1425,7 +1442,7 @@ dialog textarea {
   margin-top: 25px;
 }
 .form-error {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   color: var(--red-ink);
   background: var(--red);
@@ -1434,6 +1451,7 @@ dialog textarea {
   overflow-wrap: anywhere;
 }
 .toast {
+  overflow-wrap: anywhere;
   position: fixed;
   left: 50%;
   bottom: 24px;
@@ -1442,7 +1460,7 @@ dialog textarea {
   border-radius: 5px;
   background: #fff;
   padding: 13px 20px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   color: #33402d;
   z-index: 10;
@@ -1450,19 +1468,6 @@ dialog textarea {
   max-width: calc(100% - 32px);
   text-align: center;
   margin: 0;
-}
-@media (prefers-reduced-motion: no-preference) {
-  html.js-ready .reveal {
-    opacity: 0;
-    transform: translateY(12px);
-    transition:
-      opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
-      transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  html.js-ready .reveal.is-visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 @media (min-width: 1600px) {
   .workspace {
@@ -1500,7 +1505,7 @@ dialog textarea {
     padding-bottom: 38px;
   }
   .prose {
-    font-size: 13px;
+    font-size: 14px;
   }
   .finding-title {
     font-size: 34px;
@@ -1530,7 +1535,7 @@ dialog textarea {
   }
   .button {
     padding: 9px 11px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .button kbd {
     display: none;
@@ -1551,7 +1556,7 @@ dialog textarea {
     padding: 24px;
   }
   .timeline li {
-    font-size: 10px;
+    font-size: 12px;
     gap: 6px;
   }
   .timeline li:not(:last-child):after {
@@ -1564,7 +1569,7 @@ dialog textarea {
     padding: 11px;
   }
   .reviewer-status {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tabs {
     padding: 0 24px;
@@ -1581,7 +1586,7 @@ dialog textarea {
     padding-left: 21px;
   }
   .prose {
-    font-size: 11px;
+    font-size: 14px;
   }
   .finding-title {
     font-size: 27px;
@@ -1643,7 +1648,7 @@ dialog textarea {
     gap: 8px;
   }
   .filter {
-    font-size: 11px;
+    font-size: 12px;
     border: 1px solid var(--border);
     background: #fff;
     gap: 12px;
@@ -1679,10 +1684,10 @@ dialog textarea {
     padding: 12px;
   }
   .record-state .meta {
-    font-size: 10px;
+    font-size: 12px;
   }
   .header-actions .button {
-    font-size: 10px;
+    font-size: 12px;
   }
 }
 @media (max-width: 620px) {
@@ -1691,7 +1696,7 @@ dialog textarea {
   }
   .mobile-bar .button {
     min-height: 32px;
-    font-size: 10px;
+    font-size: 12px;
     padding: 7px 11px;
   }
   .main {
@@ -1707,11 +1712,11 @@ dialog textarea {
     letter-spacing: -1.3px;
   }
   .page-heading .eyebrow {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 1.15px;
   }
   .intro {
-    font-size: 10px;
+    font-size: 14px;
     max-width: 210px;
     line-height: 1.8;
   }
@@ -1722,7 +1727,7 @@ dialog textarea {
     display: none;
   }
   .header-actions .button {
-    font-size: 10px;
+    font-size: 12px;
     min-height: 34px;
     padding: 9px 10px;
   }
@@ -1733,7 +1738,7 @@ dialog textarea {
     display: none;
   }
   .connection {
-    font-size: 10px;
+    font-size: 12px;
   }
   .metrics {
     gap: 7px;
@@ -1743,7 +1748,7 @@ dialog textarea {
     padding: 15px 12px;
   }
   .metric .eyebrow {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.65px;
   }
   .metric-value {
@@ -1751,7 +1756,7 @@ dialog textarea {
     margin: 9px 0 4px;
   }
   .metric-note {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.6;
   }
   .record-topline {
@@ -1760,13 +1765,13 @@ dialog textarea {
   }
   .record-id {
     gap: 7px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .record-id button {
-    font-size: 10px;
+    font-size: 12px;
   }
   .repo-label {
-    font-size: 10px;
+    font-size: 12px;
     gap: 7px;
   }
   .record-heading {
@@ -1778,7 +1783,7 @@ dialog textarea {
     letter-spacing: -0.35px;
   }
   .badge {
-    font-size: 10px;
+    font-size: 12px;
     padding: 4px 7px;
   }
   .record-state {
@@ -1786,10 +1791,10 @@ dialog textarea {
     gap: 9px;
   }
   .record-updated {
-    font-size: 10px;
+    font-size: 12px;
   }
   .revision-meta {
-    font-size: 10px;
+    font-size: 12px;
     gap: 5px 17px;
     margin-top: 15px;
   }
@@ -1801,7 +1806,7 @@ dialog textarea {
   .timeline li {
     flex-direction: column;
     align-items: flex-start;
-    font-size: 10px;
+    font-size: 12px;
     gap: 6px;
   }
   .timeline li:not(:last-child):after {
@@ -1820,26 +1825,28 @@ dialog textarea {
     gap: 8px;
   }
   .reviewer-mini {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
     padding: 10px;
     gap: 8px;
     align-items: flex-start;
-    flex-wrap: wrap;
   }
   .role-letter {
     width: 24px;
     height: 24px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .reviewer-info strong {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.5;
   }
   .reviewer-info p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .reviewer-status {
-    margin-left: 32px;
-    font-size: 10px;
+    grid-column: 2;
+    margin-left: 0;
+    font-size: 12px;
     white-space: normal;
   }
   .tabs {
@@ -1847,7 +1854,7 @@ dialog textarea {
     gap: 22px;
   }
   .tabs button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 15px 0 13px;
   }
   .tab-panel {
@@ -1862,7 +1869,7 @@ dialog textarea {
     line-height: 1.24;
   }
   .prose {
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1.9;
   }
   .source-column {
@@ -1880,7 +1887,7 @@ dialog textarea {
     font-size: 27px;
   }
   .section-kicker {
-    font-size: 10px;
+    font-size: 12px;
   }
   .review-grid {
     grid-template-columns: 1fr;
@@ -1890,7 +1897,7 @@ dialog textarea {
     padding: 20px;
   }
   .review-card .prose {
-    font-size: 12px;
+    font-size: 14px;
   }
   .vote-grid {
     grid-template-columns: 1fr;
@@ -1909,20 +1916,20 @@ dialog textarea {
     gap: 10px;
   }
   .path-card code {
-    font-size: 10px;
+    font-size: 12px;
   }
   .files-header h3 {
     font-size: 26px;
   }
   .files-header p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .artifact summary {
-    font-size: 10px;
+    font-size: 12px;
   }
   .record-footer {
     padding: 13px 18px;
-    font-size: 10px;
+    font-size: 12px;
     align-items: flex-start;
     gap: 10px;
   }
@@ -1931,7 +1938,7 @@ dialog textarea {
     text-align: right;
   }
   .page-footer {
-    font-size: 10px;
+    font-size: 12px;
     gap: 12px;
     margin-top: 20px;
     padding-top: 14px;
@@ -1946,10 +1953,10 @@ dialog textarea {
     font-size: 31px;
   }
   .empty-state > p:not(.eyebrow) {
-    font-size: 12px;
+    font-size: 14px;
   }
   .empty-state .eyebrow {
-    font-size: 10px;
+    font-size: 12px;
   }
   .empty-illustration {
     right: -23px;
@@ -1962,14 +1969,14 @@ dialog textarea {
     margin-top: 35px;
     padding-top: 21px;
     flex-direction: column;
-    font-size: 10px;
+    font-size: 12px;
   }
   .notice {
     padding: 12px 14px;
     gap: 12px;
   }
   .notice p {
-    font-size: 11px;
+    font-size: 14px;
   }
   .sidebar-content {
     padding: 20px 18px;
@@ -1983,7 +1990,7 @@ dialog textarea {
     max-height: 320px;
   }
   .history-heading .meta {
-    font-size: 10px;
+    font-size: 12px;
   }
   .dialog-heading h2 {
     font-size: 30px;
@@ -1995,7 +2002,7 @@ dialog textarea {
     padding: 25px 22px;
   }
   .dialog-actions .button {
-    font-size: 11px;
+    font-size: 12px;
   }
   .provider-note {
     padding: 13px 14px;
@@ -2004,48 +2011,14 @@ dialog textarea {
     gap: 10px;
   }
   .toast {
-    font-size: 10px;
+    font-size: 12px;
     padding: 11px 16px;
     bottom: 16px;
   }
-}
-
-.text-button {
-  min-height: 26px;
-  min-width: 26px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-summary {
-  min-height: 26px;
-}
-.tabs button:focus-visible {
-  outline-offset: -5px;
-  border-radius: 4px;
-}
-.timeline .unresolved .step-number {
-  background: var(--yellow);
-  border-color: var(--yellow);
-  color: var(--yellow-ink);
-}
-.toast {
-  overflow-wrap: anywhere;
 }
 
 @media (max-width: 360px) {
   .page-heading { flex-direction: column; }
   .header-actions { padding-top: 0; }
   .intro { max-width: 100%; }
-}
-
-@media (max-width: 620px) {
-  .reviewer-mini {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-  }
-  .reviewer-status {
-    grid-column: 2;
-    margin-left: 0;
-  }
 }
