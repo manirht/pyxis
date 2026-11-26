@@ -58,9 +58,17 @@ export class CopilotStream {
     try { event = JSON.parse(line); }
     catch { throw invalid(); }
     if (!isObject(event) || typeof event.type !== 'string') throw invalid();
-    if (event.type === 'session.error') throw new Error('GitHub Copilot reported a session error.');
+    if (event.type === 'session.error') {
+      const data = isObject(event.data) ? event.data : {};
+      const hint = data.statusCode === 401 || data.statusCode === 403 || data.errorType === 'authentication'
+        ? ' Check the CLI login or provider credentials.'
+        : data.statusCode === 429 || data.errorType === 'rate_limit' || data.errorType === 'quota'
+          ? ' The provider reported a usage or rate limit.'
+          : data.errorType === 'network' ? ' The provider connection failed.' : '';
+      throw new Error('GitHub Copilot reported a session error.' + hint);
+    }
     if (event.type === 'result') {
-      if (event.outcome === 'blocked') throw invalid();
+      if (event.outcome === 'blocked') throw new Error('GitHub Copilot blocked the run.');
       this.completed = true;
       this.exitCode = event.exitCode;
     } else if (event.type === 'assistant.message' && event.agentId === undefined) {
@@ -77,8 +85,13 @@ export class CopilotStream {
 
   content(expectedExitCode: 0 | 1 = 0): string {
     if (this.lineBytes) this.readLine();
-    if (!this.completed || this.exitCode !== expectedExitCode || !this.response || this.response.hasTools) throw invalid();
+    if (!this.completed) throw new Error('GitHub Copilot ended without a terminal result.');
+    if (this.exitCode !== expectedExitCode) throw new Error('GitHub Copilot exit status does not match its terminal result.');
+    if (!this.response) throw new Error('GitHub Copilot ended without a root assistant answer.');
+    if (this.response.hasTools) throw new Error('GitHub Copilot ended with pending tool requests.');
     if (this.response.oversized) throw new Error('GitHub Copilot response exceeded the 2 MiB final answer limit.');
+    if (expectedExitCode === 1 && this.response.content.trim())
+      throw new Error('GitHub Copilot returned a nonempty answer from a failed run.');
     return this.response.content;
   }
 

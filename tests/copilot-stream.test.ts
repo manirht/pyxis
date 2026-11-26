@@ -241,3 +241,19 @@ test('Copilot streaming keeps cancellation and deadlines effective while drainin
     await rejected;
   }
 });
+
+test('structured session failures retain safe category hints without exposing provider prose', async () => {
+  for (const [data, hint] of [
+    [{ statusCode: 401 }, /credentials/], [{ errorType: 'authentication' }, /credentials/],
+    [{ statusCode: 429 }, /rate limit/], [{ errorType: 'quota' }, /rate limit/],
+    [{ errorType: 'network' }, /connection failed/], [{ errorType: 'unknown' }, /session error/],
+  ] as const) {
+    const raw = jsonl({ type: 'session.error', data: { ...data, message: 'PRIVATE_DIAGNOSTIC' } })
+    await assert.rejects(copilotAdapter(undefined, async () => raw)(call, AbortSignal.timeout(1000)), error => {
+      assert.ok(error instanceof Error && !(error instanceof ModelOutputError))
+      assert.match(error.message, hint)
+      assert.ok(!error.message.includes('PRIVATE_DIAGNOSTIC'))
+      return true
+    })
+  }
+})

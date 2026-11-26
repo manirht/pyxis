@@ -223,14 +223,17 @@ export type InvokeProvider = (provider: Provider, args: string[], call: AgentCal
 
 let copilotCapability: { executable: string; modified: number; exportFlag: string } | undefined;
 
-function supportedCopilotVersion(output: string): boolean {
+export function checkCopilotVersion(output: string): void {
   // Fail closed on prereleases, unknown banners and incidental version numbers.
   // The bundled CLI prints a period and the fixed update hint after its version.
   const match = /^(?:GitHub Copilot CLI )?v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.?(?:\r?\nRun 'copilot update' to check for updates\.)?$/.exec(output.trim());
-  if (!match) return false;
-  const [major, minor, patch] = match.slice(1).map(Number);
-  return [major, minor, patch].every(Number.isSafeInteger) &&
-    (major > 1 || (major === 1 && (minor > 0 || patch >= 97)));
+  const version = match?.slice(1).map(Number);
+  if (!version || !version.every(Number.isSafeInteger)) {
+    throw new Error('GitHub Copilot CLI version output was not recognized. Pyxis requires a verified stable version (1.0.97 or newer).');
+  }
+  const [major, minor, patch] = version;
+  if (major < 1 || (major === 1 && minor === 0 && patch < 97))
+    throw new Error('GitHub Copilot CLI 1.0.97 or newer (stable) is required for reliable JSON output. Update the bundled CLI.');
 }
 
 async function copilotExportFlag(request: ProcessRequest): Promise<string> {
@@ -241,9 +244,7 @@ async function copilotExportFlag(request: ProcessRequest): Promise<string> {
   // --no-auto-update selects the binary's bundled CLI. Its flags can differ
   // from the newer cached package that a plain "copilot --version" describes.
   const version = await runProcess({ ...request, args: ['--no-auto-update', '--version'], input: '', onStdout: undefined });
-  if (!supportedCopilotVersion(version)) {
-    throw new Error('GitHub Copilot CLI 1.0.97 or newer (stable) is required for reliable JSON output. Update the bundled CLI.');
-  }
+  checkCopilotVersion(version);
   const usage = await runProcess({ ...request, args: ['--no-auto-update', '--help'], input: '', onStdout: undefined });
   const exportFlag = usage.includes('--sync-session') ? '--sync-session=off' : '--no-remote-export';
   if (!usage.includes('--available-tools') || !usage.includes(exportFlag.split('=')[0])) {
