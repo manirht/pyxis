@@ -8,7 +8,7 @@ The harness runs locally on Node.js and calls installed agent CLIs. Their config
 
 Start `rca serve` and open the [local dashboard](http://127.0.0.1:4317/). Browse recent investigations, follow each workflow stage, and read the accepted reports, peer critiques, proposals, ballots, and terminal result. Each run also has a downloadable Markdown report.
 
-The default workspace is this harness repository’s ignored [`runs/`](runs/) folder, even when the investigated repository is elsewhere. For the copied local Codex/Copilot evidence, open [`runs/START-HERE.md`](runs/START-HERE.md): it links to all imported runs and the complete validation archive. That index and its evidence are local files and are intentionally absent from Git clones. See [the run record guide](docs/RUN-RECORDS.md) for the file layout, privacy boundaries, and `RCA_RUNS_DIR` override.
+The default workspace is this harness repository’s ignored `runs/` folder, even when the investigated repository is elsewhere. If a local `runs/START-HERE.md` exists, it indexes imported evidence. These ignored files are not included in Git clones. See [the run record guide](docs/RUN-RECORDS.md) for the file layout, privacy boundaries, and `RCA_RUNS_DIR` override.
 
 ## Run your first investigation
 

@@ -2,7 +2,7 @@
 
 Pyxis stores detailed execution records in the harness repository’s `runs/` directory by default. This location belongs to the harness, not to the target repository supplied with `--repo`. `/runs/` is ignored by Git. From now on, keep validation logs, screenshots, RCA reports, provider outputs, and detailed run artifacts here so they remain easy to find alongside the project.
 
-Start `rca serve` and open the [local dashboard](http://127.0.0.1:4317/) to browse recent investigations and their stage outputs. A run’s **Download report** action saves a readable Markdown copy. For the imported local evidence, start at [`runs/START-HERE.md`](../runs/START-HERE.md). That index is created locally with the evidence and is absent from Git clones.
+Start `rca serve` and open the [local dashboard](http://127.0.0.1:4317/) to browse recent investigations and their stage outputs. A run’s **Download report** action saves a readable Markdown copy. If a local `runs/START-HERE.md` exists, it indexes imported evidence. That index is not included in Git clones.
 
 ## Folder layout
 
@@ -26,7 +26,7 @@ runs/                              # ignored; local and potentially sensitive
   archive/<date>/                 # original imported evidence snapshots
 ```
 
-Each stage publishes only the files it reaches. Failed runs can retain useful reports or proposals without votes. Older imported runs do not gain prompts or events that were never recorded. `REPORT.md` is a generated reading view; the accepted JSON artifacts and proposal bytes remain the authoritative evidence. The report is refreshed as a run changes, during startup reconciliation, and when requested through the report endpoint.
+Each stage publishes only the files it reaches. Failed runs can retain useful reports or proposals without votes. Older imported runs do not gain prompts or events that were never recorded. `REPORT.md` is a generated reading view; the accepted JSON artifacts and proposal bytes remain the authoritative evidence. The report is refreshed as a run changes and when requested through the report endpoint. Terminal history is not rewritten at startup. Report refreshes and event appends are best effort: failures log a warning without rejecting an already saved run transition. An explicit report request can fail for that one run; accepted JSON remains authoritative.
 
 `run.json` identifies the actual role bindings. A and B are workflow roles; consult their `adapter` and `model` fields instead of assuming which provider filled a role. A null model records that the provider’s default was requested; it does not establish the exact model ID used.
 
@@ -73,20 +73,12 @@ rca serve
 
 A custom location outside this repository needs its own ignore rule and appropriate access controls. `RCA_TEMP_ROOT` controls disposable worktrees separately; it is not the durable evidence directory.
 
-## Imported evidence from 2026-11-25
-
-The local [`runs/START-HERE.md`](../runs/START-HERE.md) links to all copied investigations and the complete archive. [`runs/archive/2026-11-25/INDEX.md`](../runs/archive/2026-11-25/INDEX.md) lists every archived file. The archive includes the reliability-fix investigation, earlier live suite, saved Codex/Copilot stage outputs, critiques, proposal versions, ballots, independent adjudications, review reports, and validation logs.
-
-Fourteen available run folders were imported into direct history: six finalized and eight failed, all with cleanup complete. This includes the three reliability-suite investigations, the final smoke on reviewed Pyxis, failure/cancellation checks, and earlier live attempts. The imported bindings identify A as Codex and B as GitHub Copilot; two earlier finalized runs explicitly requested Copilot `gpt-5.6-sol`, while other model fields requested provider defaults.
-
-The [import manifest](../runs/archive/2026-11-25/IMPORT-MANIFEST.json) records source provenance, byte counts and SHA-256 for every copied file. The [verification record](../runs/archive/2026-11-25/VERIFICATION.json) records matching before/after source fingerprints, copy checks, proposal/ballot digests, and permissions. Original evidence was copied, not moved or deleted. Existing JSON and proposal bytes were not reformatted. Duplicate run IDs must match exact file hashes; a different record must never overwrite an existing ID.
-
-Historical absolute paths inside immutable JSON or original Markdown remain unchanged. Follow the generated local index for relative links to the copied files. Existing evidence was imported only from the selected durable evidence folders; credentials and private native CLI dumps outside those folders were not collected. The index also links the later [PR #1 comment review and native CI evidence](../runs/validation/pr1-review-comments/), kept separately from the immutable archive.
-
 ## Keep and share records carefully
 
 Run records can contain issue text and source code. On POSIX, private workflow prompts and rejected diagnostics use owner-only directories (mode `0700`) and files (mode `0600`). They stay out of the allowlisted artifacts API and generated reports. Accepted reports, proposals, votes, safe attempt metadata, and lifecycle/call metadata remain available on every platform.
 
-On Windows, new workflow prompts and rejected responses are omitted because POSIX file modes do not restrict inherited Windows ACLs. No opt-in bypass enables raw persistence there. Existing legacy private files are preserved locally, remain excluded from the API and generated reports, and need a separate access-permission review before sharing an old run directory. These Windows omissions do not remove accepted review history or safe retry metadata.
+On Windows, new workflow prompts and rejected responses are omitted because POSIX file modes do not restrict inherited Windows ACLs. No opt-in bypass enables raw persistence there. These Windows omissions do not remove accepted review history or safe retry metadata.
 
 Save future supplementary validation under `runs/validation/<date>-<purpose>/` and add a short `REPORT.md` describing what ran, the exact revision, observed results, and limitations. Keep copied historical snapshots under `runs/archive/` and link them from `runs/START-HERE.md`. Use relative links within the local evidence tree. Never force-add this data to Git. Review any report or artifact before sharing it outside the machine; ignore rules and file modes do not sanitize its contents.
+
+Safe rejection metadata uses `willRetry` for the plan at rejection time. A subsequent deadline or cancellation can prevent the next attempt; call audit events, when available, show actual calls. History reads records sequentially, skips unreadable entries with a warning, and sorts by recorded creation time; no extra cache or index is maintained.

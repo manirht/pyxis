@@ -110,10 +110,9 @@ export class RunStore {
       updatedAt: now, finishedAt: null, artifacts: [], proposalDigests: {}, error: null,
       cleanupPending: false, cleanupError: null }
     await mkdir(this.directory(id), { mode: 0o700 })
-    // The manifest commits submission only after its initial local records exist.
-    // A failed initial report/audit write must not leave resumable queued work.
+    // The manifest commits submission; reports and audit events are derived views.
     await this.appendEvent(id, { timestamp: now, kind: 'run-created', stage: run.stage, status: run.status })
-    await this.writeReport(run)
+    await this.writeReport(run).catch(() => console.error('Run report refresh failed for', id))
     await atomicWrite(join(this.directory(id), 'run.json'), jsonBytes(run))
     return run
   }
@@ -126,9 +125,14 @@ export class RunStore {
   async ids() { return (await readdir(this.root, { withFileTypes: true })).filter(e => e.isDirectory() && isRunId(e.name)).map(e => e.name) }
 
   async list(): Promise<RunRecord[]> {
-    const records = await Promise.all((await this.ids()).map(id => this.get(id)))
-    return records.filter((run): run is RunRecord => run !== null)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, 100)
+    const records: RunRecord[] = []
+    for (const id of await this.ids()) {
+      try {
+        const run = await this.get(id)
+        if (run && run.id === id && typeof run.createdAt === 'string') records.push(run)
+      } catch { console.error('Saved run could not be listed', id) }
+    }
+    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, 100)
   }
 
   async artifacts(id: string): Promise<Record<string, unknown>> {
@@ -155,15 +159,17 @@ export class RunStore {
       for (const artifact of run.artifacts.filter(name => !previous.artifacts.includes(name))) {
         await this.appendEvent(id, { timestamp: run.updatedAt, kind: 'artifact-published', stage: run.stage, status: run.status, artifact })
       }
-      await this.writeReport(run)
+      await this.writeReport(run).catch(() => console.error('Run report refresh failed for', id))
       return run
     })
   }
 
   private async appendEvent(id: string, event: RunEvent) {
-    const handle = await open(join(this.directory(id), 'events.jsonl'), 'a', 0o600)
-    try { await handle.writeFile(JSON.stringify(event) + '\n'); await handle.sync() }
-    finally { await handle.close() }
+    try {
+      const handle = await open(join(this.directory(id), 'events.jsonl'), 'a', 0o600)
+      try { await handle.writeFile(JSON.stringify(event) + '\n'); await handle.sync() }
+      finally { await handle.close() }
+    } catch { console.error('Run audit append failed for', id) }
   }
 
   private async writeReport(run: RunRecord) {
@@ -272,10 +278,7 @@ export class RunStore {
   async reconcile(id: string) {
     const run = await this.get(id)
     if (!run) return run
-    if (run.status !== 'running' && run.status !== 'queued') {
-      await this.report(id)
-      return run
-    }
+    if (run.status !== 'running' && run.status !== 'queued') return run
     return this.change(id, async fresh => {
       const directory = this.directory(id)
       fresh.artifacts = []

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -10,6 +10,7 @@ import { RunStore } from '../src/store.ts'
 import { pinInput } from '../src/workspace.ts'
 import type { AgentCall, RunRecord } from '../src/types.ts'
 import type { RunEvent } from '../src/run-report.ts'
+import { renderRunReport } from '../src/run-report.ts'
 import { issue, makeFixture } from './fixture.ts'
 
 const agents = { A: { adapter: 'codex', model: 'fixture-a' }, B: { adapter: 'copilot', model: 'fixture-b' } }
@@ -116,7 +117,14 @@ test('rejected output and retry prompts stay private across terminal failure and
   const privateText = 'PRIVATE_REJECTED_OUTPUT_NEVER_PUBLISH'
   const service = await openService({ runsDir, tempRoot: join(f.root, 'worktrees'), adapters: {
     A: async () => ({ hypothesis: 'Accepted peer report', evidence: [f.evidence], gaps: [] }),
-    B: async () => { attempts++; return privateText },
+    B: async () => {
+      for (let i = 0; !(await store.get(run.id))!.artifacts.includes('reports/A.json'); i++) {
+        assert.ok(i < 400, 'peer report was not published')
+        await delay(20)
+      }
+      attempts++
+      return privateText
+    },
   } })
   const failed = await terminal(service, run.id)
   assert.equal(failed.status, 'failed')
@@ -176,6 +184,10 @@ test('recent history is bounded, sorted and compatible with legacy terminal reco
     assert.equal((await service.get(legacy.id))?.status, 'failed')
     assert.equal(await service.report('missing'), null)
   } finally { await service.close() }
+  const invalid = randomUUID()
+  await mkdir(join(root, invalid))
+  await writeFile(join(root, invalid, 'run.json'), '{ truncated')
+  assert.equal((await store.list()).length, 100)
 })
 
 
@@ -213,4 +225,96 @@ test('full workflow prompts use the same fail-closed platform policy as raw reje
     assert.ok(!JSON.stringify(audit).includes(privatePrompt))
     assert.ok(!JSON.stringify(audit).includes(privateOutput))
   }
+})
+
+test('a terminal run with a corrupt artifact does not prevent service startup', async t => {
+  const f = await makeFixture()
+  t.after(f.cleanup)
+  const root = join(f.root, 'runs')
+  await mkdir(root)
+  const store = new RunStore(root)
+  const run = await store.create(await pinInput({ repo: f.repo, issue }), agents)
+  await store.change(run.id, r => { r.status = 'running' })
+  await store.publish(run.id, 'reports/A.json', { hypothesis: 'Saved report', evidence: [], gaps: [] })
+  await store.finish(run.id, { status: 'failed', stage: 'investigate', error: { message: 'Original failure' }, artifacts: ['reports/A.json'] })
+  await writeFile(join(root, run.id, 'reports/A.json'), '{ truncated')
+  const service = await openService({ runsDir: root, deferStart: true })
+  t.after(service.close)
+  assert.equal((await service.get(run.id))?.status, 'failed')
+  await assert.rejects(service.report(run.id), SyntaxError)
+})
+
+test('failed derived report and audit writes do not reject committed state or hide the original failure', async t => {
+  const f = await makeFixture()
+  t.after(f.cleanup)
+  const root = join(f.root, 'runs')
+  await mkdir(root)
+  const store = new RunStore(root)
+  const run = await store.create(await pinInput({ repo: f.repo, issue }), agents)
+  await store.change(run.id, r => { r.status = 'running'; r.stage = 'investigate' })
+  for (const name of ['REPORT.md', 'events.jsonl']) {
+    const file = join(root, run.id, name)
+    await rm(file)
+    await mkdir(file)
+  }
+  const call = await store.startCall(run.id, { stage: 'investigate', action: 'investigate', role: 'A', attempt: 1 }, 'Private workflow input')
+  await store.finishCall(run.id, call, 'rejected', 'schema')
+  await store.recordRejection(run.id, 'attempts/investigate/A-1.json', { category: 'schema', willRetry: false }, 'Rejected input')
+  await store.publish(run.id, 'reports/B.json', { hypothesis: 'Accepted peer report', evidence: [], gaps: [] })
+  await store.finish(run.id, { status: 'failed', stage: 'investigate', error: { message: 'Original provider failure' }, artifacts: ['reports/B.json'] })
+  await store.change(run.id, r => { r.cleanupPending = false })
+  assert.equal((await store.get(run.id))?.error?.message, 'Original provider failure')
+  assert.ok((await store.get(run.id))?.artifacts.includes('reports/B.json'))
+  assert.ok((await store.artifacts(run.id))['attempts/investigate/A-1.json'])
+  const service = await openService({ runsDir: root })
+  t.after(service.close)
+  const api = await startApi(service, 0)
+  t.after(api.close)
+  const response = await fetch(api.origin + '/runs/' + run.id + '/report')
+  assert.equal(response.status, 500)
+  assert.deepEqual(await response.json(), { error: 'The local service could not complete the request.' })
+})
+
+test('readable reports keep HTML and Markdown fence payloads inside longer literal fences', async t => {
+  const f = await makeFixture()
+  t.after(f.cleanup)
+  const root = join(f.root, 'runs')
+  await mkdir(root)
+  const store = new RunStore(root)
+  const run = await store.create(await pinInput({ repo: f.repo, issue }), agents)
+  const payload = '<img src=x onerror=alert(1)>\n`\n```\n````\n## injected heading'
+  const report = renderRunReport(run, { 'reports/A.json': { hypothesis: payload, evidence: [{ ...f.evidence, excerpt: payload }], gaps: ['`'] } })
+  const fenced = '`````text\n' + payload + '\n`````'
+  assert.equal(report.split(fenced).length - 1, 2)
+  assert.ok(report.includes('```text\n`\n```'))
+})
+
+test('an audit failure while rejecting an answer does not hide its retry or prevent finalization', async t => {
+  const f = await makeFixture()
+  t.after(f.cleanup)
+  const root = join(f.root, 'runs')
+  let rejections = 0
+  let release!: () => void
+  const auditBroken = new Promise<void>(resolve => { release = resolve })
+  const adapter = async (call: AgentCall) => {
+    if (call.stage === 'investigate') {
+      if (call.role === 'A') await auditBroken
+      if (call.role === 'B' && rejections++ === 0) {
+        const audit = join(root, call.runId, 'events.jsonl')
+        try { await rm(audit); await mkdir(audit) } finally { release() }
+        return 'bad JSON answer'
+      }
+      return { hypothesis: 'Unit mismatch', evidence: [f.evidence], gaps: [] }
+    }
+    if (call.stage === 'critique') return { assessment: 'Supported', evidence: [], objections: [] }
+    if (call.stage === 'draft') return { cause: 'Unit mismatch', explanation: 'Seconds compared with milliseconds', evidence: [f.evidence], gaps: [] }
+    const { version, digest } = JSON.parse(call.prompt.split('Stage inputs:\n').at(-1)!)
+    return { version, digest, decision: 'approve', objections: [] }
+  }
+  const service = await openService({ runsDir: root, tempRoot: join(f.root, 'worktrees'), adapters: { A: adapter, B: adapter } })
+  t.after(service.close)
+  const run = await service.submit({ repo: f.repo, issue })
+  assert.equal((await terminal(service, run.id)).status, 'finalized')
+  assert.equal(rejections, 2)
+  assert.ok((await service.artifacts(run.id))['attempts/investigate/B-1.json'])
 })

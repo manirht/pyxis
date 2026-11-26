@@ -47,7 +47,7 @@ Stop the service with Ctrl+C. Let active investigations finish before restarting
 
 ## Settings and checks
 
-By default, durable records are written to this harness repository’s `runs/` folder, which is ignored by Git. The target repository passed to `--repo` does not change that location. Keep future validation logs, screenshots, and detailed run evidence under this ignored folder too. For existing copied evidence, open [`runs/START-HERE.md`](runs/START-HERE.md) locally; the index and records are not included in Git clones.
+By default, durable records are written to this harness repository’s `runs/` folder, which is ignored by Git. The target repository passed to `--repo` does not change that location. Keep future validation logs, screenshots, and detailed run evidence under this ignored folder too. If `runs/START-HERE.md` exists locally, it indexes imported evidence; ignored records are not included in Git clones.
 
 Use `RCA_RUNS_DIR` to change the durable run directory, `RCA_TEMP_ROOT` for temporary worktrees, and `RCA_STAGE_TIMEOUT_MS` for stage deadlines in milliseconds. `RCA_CLAUDE_MODEL`, `RCA_CODEX_MODEL`, and `RCA_COPILOT_MODEL` override their respective CLI model defaults. Set these in the terminal that launches the service.
 
