@@ -88,5 +88,3 @@ Start with the [agent onboarding notes](AGENTS.md), then follow a request throug
 | [Types](src/types.ts), [JSON schemas](schemas/), and [store](src/store.ts) | Define the agent and run records, validate output shapes, and publish artifacts to disk. |
 
 When changing a stage, check its prompt, output schema, and [workflow tests](tests/workflow.test.ts) together. Preserve the independent first reports, exact-version ballots, source verification, and partial results on failure. Run `npm run check` and `npm test` from the harness root for local verification. The [setup guide](SETUP.md) describes the separate live-provider tests.
-
-See the [collaborator review policy](docs/REVIEW-POLICY.md) for automatic PR review requests and the administrator setup needed to require one approval before merging.
