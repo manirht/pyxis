@@ -9,12 +9,14 @@ import { codexAdapter } from '../src/adapters/codex.ts'
 import { runProcess } from '../src/adapters/process.ts'
 import { openService } from '../src/service.ts'
 import { RunStore } from '../src/store.ts'
+import { ModelOutputError } from '../src/output-error.ts'
 import { pinInput } from '../src/workspace.ts'
 import { executeRun } from '../src/workflow/rca.ts'
 import type { AgentAdapter, AgentCall, Result, RunRecord } from '../src/types.ts'
 import { exec, issue, makeFixture } from './fixture.ts'
 
 const fixtures = JSON.parse(await readFile(new URL('./fixtures/copilot-output-errors.json', import.meta.url), 'utf8'))
+const capturedNativeEmpty = JSON.parse(await readFile(new URL('./fixtures/copilot-native-empty.json', import.meta.url), 'utf8'))
 const agents = { A: { adapter: 'codex', model: null }, B: { adapter: 'copilot', model: null } }
 const events = (content: string, exitCode = 0) => [
   { type: 'assistant.message', data: { content, toolRequests: [] } }, { type: 'result', exitCode },
@@ -101,15 +103,18 @@ test('a wrong citation range is retried without cancelling the independent peer 
   assert.ok(!Object.keys(artifacts).some(name => name.startsWith('diagnostics/')))
 })
 
-for (const kind of ['schema', 'malformed-json', 'prose-json', 'empty', 'native-empty'] as const) {
+for (const kind of ['schema', 'malformed-json', 'prose-json', 'empty', 'native-empty', 'captured-native-empty'] as const) {
   test('a ' + kind + ' model response is rejected then regenerated through a fresh adapter call', async t => {
     const s = await setup(t)
     let attempts = 0
     const adapter = copilotAdapter(undefined, async (_provider, _args, call, signal) => {
       if (call.stage === 'investigate' && ++attempts === 1) {
-        if (kind === 'native-empty') return await runProcess({
-          executable: process.execPath, args: ['-e', 'process.stdout.write(process.argv[1]);process.stderr.write(process.argv[2]);process.exitCode=1', events('', 1), fixtures.emptyStderr],
+        if (kind === 'native-empty' || kind === 'captured-native-empty') return await runProcess({
+          executable: process.execPath, args: ['-e', 'process.stdout.write(process.argv[1]);process.stderr.write(process.argv[2]);process.exitCode=1',
+            kind === 'captured-native-empty' ? capturedNativeEmpty.events.map((event: unknown) => JSON.stringify(event)).join('\n') + '\n' : events('', 1),
+            kind === 'captured-native-empty' ? capturedNativeEmpty.stderr : fixtures.emptyStderr],
           label: 'GitHub Copilot', cwd: s.f.root, input: '', signal, env: process.env,
+          outputMode: kind === 'captured-native-empty' ? 'copilot-jsonl' : undefined,
         })
         const bad = { schema: '{"hypothesis":false}', 'malformed-json': '{"hypothesis":"sensitive-unpublished-text"',
           'prose-json': fixtures.prosePrefix + JSON.stringify(s.report), empty: '' }[kind]
@@ -145,7 +150,7 @@ test('prose-prefixed ballots are regenerated against the exact same immutable pr
   assert.equal((artifacts['attempts/vote-v1/B-1.json'] as { category: string }).category, 'json')
 })
 
-for (const defect of ['empty-objection', 'inconsistent-decision'] as const) {
+for (const defect of ['empty-objection', 'inconsistent-decision', 'extra-field'] as const) {
   for (const target of ['version', 'digest', 'correct'] as const) {
     test(`${target === 'correct' ? 'correct-target' : 'wrong-target'} ballots with ${defect} ${target === 'correct' ? 'remain retryable' : 'fail before semantic recovery'} (${target})`, async t => {
       const s = await setup(t)
@@ -155,7 +160,8 @@ for (const defect of ['empty-objection', 'inconsistent-decision'] as const) {
         if (call.stage === 'vote' && ++attempts === 1) return {
           ...answer,
           ...(target === 'version' ? { version: 99 } : target === 'digest' ? { digest: '0'.repeat(64) } : {}),
-          decision: 'object', objections: defect === 'empty-objection' ? ['   '] : [],
+          ...(defect === 'extra-field' ? { extra: 'Unexpected field' } :
+            { decision: 'object', objections: defect === 'empty-objection' ? ['   '] : [] }),
         }
         return answer
       })
@@ -262,6 +268,28 @@ test('a retry uses the original stage deadline and stops its active provider on 
   assert.equal(signals[0], signals[1])
   assert.equal(signals[1]?.aborted, true)
   assert.ok(Date.now() - began < 2500, 'retry must not reset the stage deadline')
+})
+
+test('a known rejected answer is recorded even if cancellation has already arrived', async t => {
+  const s = await setup(t)
+  const shutdown = new AbortController()
+  let attempts = 0
+  const rejected = 'PRIVATE_KNOWN_REJECTION'
+  const artifacts = await s.execute(async () => {
+    attempts++
+    shutdown.abort(new Error('Service stopped after a known rejected answer'))
+    throw new ModelOutputError('json', 'Invalid JSON response.', rejected)
+  }, 15_000, shutdown.signal)
+  const result = artifacts['result.json'] as Result
+  assert.ok(result.status === 'failed')
+  assert.match(result.error.message, /Service stopped after a known rejected answer/)
+  assert.equal(attempts, 1)
+  assert.deepEqual(artifacts['attempts/investigate/B-1.json'], {
+    stage: 'investigate', role: 'B', attempt: 1, category: 'json', message: 'Invalid JSON response.', willRetry: false,
+  })
+  assert.equal(artifacts['attempts/investigate/B-2.json'], undefined)
+  await assertPrivateDiagnostics(join(s.runsDir, s.run.id, 'diagnostics/investigate/B-1.json'), rejected)
+  assert.ok(!JSON.stringify(artifacts).includes(rejected))
 })
 
 test('shutdown during a retry cancels it without starting another attempt', async t => {

@@ -50,9 +50,8 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
           signal.throwIfAborted()
           return value
         } catch (e) {
-          signal.throwIfAborted()
           if (!(e instanceof ModelOutputError)) throw e
-          const willRetry = e.retryable && attempt < MAX_MODEL_OUTPUT_ATTEMPTS
+          const willRetry = !signal.aborted && e.retryable && attempt < MAX_MODEL_OUTPUT_ATTEMPTS
           const response = e.response ?? raw ?? null
           await store.recordRejection(id, `attempts/${stage}/${role}-${attempt}.json`,
             { stage, role, attempt, category: e.category, message: e.message, willRetry }, response)

@@ -15,15 +15,18 @@ export const shapes = { investigate: load('report'), critique: load('critique'),
 
 export function parseOutput<S extends AgentStage>(stage: S, raw: unknown,
   target?: Pick<Vote, 'version' | 'digest'>): StageOutput[S] {
+  // A named different target is a terminal provenance-policy incident, even
+  // with extra fields. This is deliberately conservative, not a claim that a
+  // fresh validated ballot could bypass the immutable version/digest checks.
+  if (stage === 'vote' && target && raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const vote = raw as Partial<Vote>
+    if ((typeof vote.version === 'number' && vote.version !== target.version) ||
+        (typeof vote.digest === 'string' && vote.digest !== target.digest))
+      throw new ModelOutputError('vote-target', 'Vote targets a different proposal', raw, false)
+  }
   const { validate } = shapes[stage]
   if (!validate(raw)) throw new ModelOutputError('schema', 'Invalid ' + stage + ' output: ' + ajv.errorsText(validate.errors))
   const output = raw as StageOutput[S]
-  // Bind a well-shaped ballot before retryable text/decision validation can mask a stale target.
-  if (stage === 'vote' && target) {
-    const vote = output as Vote
-    if (vote.version !== target.version || vote.digest !== target.digest)
-      throw new ModelOutputError('vote-target', 'Vote targets a different proposal', raw, false)
-  }
   const strings = Object.values(output).flatMap(v => typeof v === 'string' ? [v] :
     Array.isArray(v) ? v.filter((s: unknown) => typeof s === 'string') : [])
   if (strings.some(s => !s.trim())) throw new ModelOutputError('schema', 'Empty text in ' + stage + ' output')
