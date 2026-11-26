@@ -84,11 +84,9 @@ Each run has a durable folder under `runs/<run-id>/` in the harness installation
 
 `run.json` holds the input, resolved commits, agent bindings, and status. `reports/`, `critiques/`, `proposals/`, and `votes/` preserve the accepted review history. `attempts/<stage>/<role>-<attempt>.json` records safe rejection categories, validation feedback, and whether another attempt was planned on every platform.
 
-On POSIX, `diagnostics/` retains rejected model responses in owner-only files (mode 0600), excluded from the artifacts API. On Windows, raw rejected responses are not saved: POSIX modes do not restrict inherited Windows ACLs, and no opt-in bypass is provided.
-
 Both safe rejection records and accepted outputs survive restart. Active work is marked interrupted on restart, rather than replaying a partially completed stage. `result.json` holds the terminal outcome. The runner cleans up the temporary checkout after recording that outcome.
 
-These records contain the providers’ accepted structured outputs, not their hidden internal reasoning. Legacy private prompts and rejected diagnostics stay out of the public artifacts API and generated reports. Routine run storage does not capture native CLI stderr or private provider session dumps. Keep future validation logs, screenshots, and detailed execution evidence under the ignored `runs/` folder as well; [the run record guide](docs/RUN-RECORDS.md) explains the layout and sharing boundaries.
+See [the run record guide](docs/RUN-RECORDS.md) for artifact privacy, platform differences, and sharing boundaries. Keep future validation logs, screenshots, and detailed execution evidence under the ignored `runs/` folder as well.
 
 ## Code map for contributors and AI agents
 

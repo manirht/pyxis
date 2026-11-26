@@ -6,7 +6,34 @@ import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { PinnedInput, Result, Role, RunRecord } from './types.ts'
 import { MAX_MODEL_OUTPUT_ATTEMPTS } from './output-error.ts'
-import { renderRunReport, type CallAudit, type RunEvent } from './run-report.ts'
+import { renderRunReport } from './run-report.ts'
+
+export interface CallAudit {
+  stage: string
+  action: string
+  role: Role
+  attempt: number
+  provider: string
+  model: string | null
+  startedAt: string
+}
+
+export interface RunEvent {
+  timestamp: string
+  kind: 'run-created' | 'run-state' | 'artifact-published' | 'call-started' | 'call-finished'
+  stage: string
+  status: string
+  artifact?: string
+  action?: string
+  role?: Role
+  attempt?: number
+  provider?: string
+  model?: string | null
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
+  category?: string
+}
 
 const roles = ['A', 'B']
 const attemptArtifacts = ['investigate', 'critique', 'draft', 'revise', 'vote-v1', 'vote-v2']
@@ -110,9 +137,8 @@ export class RunStore {
       updatedAt: now, finishedAt: null, artifacts: [], proposalDigests: {}, error: null,
       cleanupPending: false, cleanupError: null }
     await mkdir(this.directory(id), { mode: 0o700 })
-    // The manifest commits submission; reports and audit events are derived views.
+    // The manifest commits submission; audit events are a derived view.
     await this.appendEvent(id, { timestamp: now, kind: 'run-created', stage: run.stage, status: run.status })
-    await this.writeReport(run).catch(() => console.error('Run report refresh failed for', id))
     await atomicWrite(join(this.directory(id), 'run.json'), jsonBytes(run))
     return run
   }
@@ -159,7 +185,9 @@ export class RunStore {
       for (const artifact of run.artifacts.filter(name => !previous.artifacts.includes(name))) {
         await this.appendEvent(id, { timestamp: run.updatedAt, kind: 'artifact-published', stage: run.stage, status: run.status, artifact })
       }
-      await this.writeReport(run).catch(() => console.error('Run report refresh failed for', id))
+      if (run.status !== 'queued' && run.status !== 'running') {
+        await this.writeReport(run).catch(() => console.error('Run report refresh failed for', id))
+      }
       return run
     })
   }
@@ -175,6 +203,7 @@ export class RunStore {
   private async writeReport(run: RunRecord) {
     const report = renderRunReport(run, await this.readArtifacts(run))
     await atomicWrite(join(this.directory(run.id), 'REPORT.md'), report)
+      .catch(() => console.error('Run report save failed for', run.id))
     return report
   }
 

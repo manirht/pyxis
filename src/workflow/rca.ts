@@ -1,10 +1,9 @@
-import { digestOf, RunStore } from '../store.ts'
+import { digestOf, RunStore, type CallAudit } from '../store.ts'
 import { prepareWorkspace, removeWorkspace, validateEvidence } from '../workspace.ts'
 import type { Adapters, AgentStage, Proposal, Role, RunError, RunRecord, StageOutput, Vote } from '../types.ts'
 import { makePrompt } from './prompts.ts'
 import { parseOutput, shapes } from './outputs.ts'
 import { ModelOutputError, MAX_MODEL_OUTPUT_ATTEMPTS } from '../output-error.ts'
-import type { CallAudit } from '../run-report.ts'
 
 class RoleFailure extends Error {
   role: Role

@@ -1,31 +1,4 @@
-import type { Role, RunRecord } from './types.ts'
-
-export interface CallAudit {
-  stage: string
-  action: string
-  role: Role
-  attempt: number
-  provider: string
-  model: string | null
-  startedAt: string
-}
-
-export interface RunEvent {
-  timestamp: string
-  kind: 'run-created' | 'run-state' | 'artifact-published' | 'call-started' | 'call-finished'
-  stage: string
-  status: string
-  artifact?: string
-  action?: string
-  role?: Role
-  attempt?: number
-  provider?: string
-  model?: string | null
-  startedAt?: string
-  finishedAt?: string
-  durationMs?: number
-  category?: string
-}
+import type { RunRecord } from './types.ts'
 
 const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -125,6 +98,6 @@ export function renderRunReport(run: RunRecord, artifacts: Record<string, unknow
     '- `REPORT.md` — this regenerated readable snapshot.',
     '- `events.jsonl` — local lifecycle and call timing audit, when recorded.', '')
   for (const name of Object.keys(artifacts).sort()) lines.push(`- ${code(name)}`)
-  lines.push('', 'Workflow prompts are not recorded. The report and artifacts API exclude legacy private prompts and rejected response bodies. Older imported runs may have no call timing audit. Raw rejected responses are retained only on POSIX; Windows omits them because POSIX modes cannot enforce private Windows ACLs.', '')
+  lines.push('', 'Private diagnostics and legacy prompt files are excluded from this report.', '')
   return lines.join('\n')
 }

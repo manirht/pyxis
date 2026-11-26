@@ -6,10 +6,9 @@ import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { startApi } from '../src/api/server.ts'
 import { openService } from '../src/service.ts'
-import { RunStore } from '../src/store.ts'
+import { RunStore, type RunEvent } from '../src/store.ts'
 import { pinInput } from '../src/workspace.ts'
 import type { AgentCall, RunRecord } from '../src/types.ts'
-import type { RunEvent } from '../src/run-report.ts'
 import { renderRunReport } from '../src/run-report.ts'
 import { issue, makeFixture } from './fixture.ts'
 
@@ -51,10 +50,11 @@ test('running snapshots retain call audits without recording prompts while accep
   const api = await startApi(service, 0)
   t.after(api.close)
   const run = await service.submit({ repo: f.repo, issue, base: f.base })
-  assert.match(await readFile(join(runsDir, run.id, 'REPORT.md'), 'utf8'), /queued/)
+  await assert.rejects(readFile(join(runsDir, run.id, 'REPORT.md')), { code: 'ENOENT' })
   service.start()
   await started
   assert.equal((await service.get(run.id))?.status, 'running')
+  await assert.rejects(readFile(join(runsDir, run.id, 'REPORT.md')), { code: 'ENOENT' })
   const runningReport = await service.report(run.id)
   assert.ok(runningReport?.includes('not reached a terminal outcome'))
   assert.ok(runningReport?.includes(f.head))
@@ -171,7 +171,7 @@ test('recent history is bounded, sorted and compatible with legacy terminal reco
   const service = await openService({ runsDir: root, deferStart: true })
   try {
     const report = await service.report(legacy.id)
-    assert.ok(report?.includes('Older imported runs may have no call timing audit'))
+    assert.ok(report?.includes(legacy.id))
     assert.equal((await service.get(legacy.id))?.status, 'failed')
     assert.equal(await service.report('missing'), null)
   } finally { await service.close() }
@@ -243,7 +243,7 @@ test('failed derived report and audit writes do not reject committed state or hi
   await store.change(run.id, r => { r.status = 'running'; r.stage = 'investigate' })
   for (const name of ['REPORT.md', 'events.jsonl']) {
     const file = join(root, run.id, name)
-    await rm(file)
+    await rm(file, { force: true })
     await mkdir(file)
   }
   const call = await store.startCall(run.id, { stage: 'investigate', action: 'investigate', role: 'A', attempt: 1 })
@@ -260,8 +260,13 @@ test('failed derived report and audit writes do not reject committed state or hi
   const api = await startApi(service, 0)
   t.after(api.close)
   const response = await fetch(api.origin + '/runs/' + run.id + '/report')
-  assert.equal(response.status, 500)
-  assert.deepEqual(await response.json(), { error: 'The local service could not complete the request.' })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('Content-Type'), 'text/markdown; charset=utf-8')
+  const report = await response.text()
+  assert.ok(report.includes('Original provider failure'))
+  assert.ok(report.includes('Accepted peer report'))
+  assert.ok(!report.includes('Rejected input'))
+  assert.ok((await stat(join(root, run.id, 'REPORT.md'))).isDirectory())
 })
 
 test('readable reports keep HTML and Markdown fence payloads inside longer literal fences', async t => {
