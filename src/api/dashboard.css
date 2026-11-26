@@ -1305,10 +1305,6 @@ details[open] > summary:after {
 .page-footer p {
   margin: 0;
 }
-.loading-record {
-  opacity: 0.55;
-  pointer-events: none;
-}
 dialog {
   width: min(590px, calc(100% - 32px));
   padding: 0;
@@ -1617,20 +1613,6 @@ dialog textarea {
   }
   .mobile-bar .wordmark {
     font-size: 25px;
-  }
-  .brand-symbol {
-    display: grid;
-    place-items: center;
-    width: 25px;
-    height: 25px;
-    background: #2a3026;
-    color: #f7f6f3;
-    border-radius: 5px;
-    font-size: 21px;
-    line-height: 1;
-    font-family: var(--serif);
-    letter-spacing: 0;
-    font-style: italic;
   }
   .workspace {
     display: block;

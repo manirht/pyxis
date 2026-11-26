@@ -40,7 +40,6 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
         signal.throwIfAborted()
         let raw: unknown
         let audit: CallAudit | undefined
-        let completed = false
         try {
           const prompt = makePrompt(run, role, action, withContext ? workspace.context : '', material, feedback)
           audit = await store.startCall(id, { stage, action, role, attempt }, prompt)
@@ -53,10 +52,9 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
           if ('evidence' in value) await validateEvidence(run.input, value.evidence, signal)
           signal.throwIfAborted()
           await store.finishCall(id, audit, 'validated')
-          completed = true
           return value
         } catch (e) {
-          if (audit && !completed) {
+          if (audit) {
             await store.finishCall(id, audit, e instanceof ModelOutputError ? 'rejected' : signal.aborted ? 'cancelled' : 'failed',
               e instanceof ModelOutputError ? e.category : undefined)
           }
