@@ -1,15 +1,6 @@
 import type { AgentAdapter } from '../types.ts';
 import { invokeProvider, parseOutput, ProviderExitError, type InvokeProvider } from './process.ts';
-import { ModelOutputError } from '../output-error.ts';
-import { copilotContent } from './copilot-stream.ts';
-
-function responseContent(raw: string, nativeEmptyResponse = false): string {
-  const content = copilotContent(raw, nativeEmptyResponse ? 1 : 0);
-  if (!content.trim())
-    throw new ModelOutputError('empty', 'GitHub Copilot returned an empty model response.', content);
-  if (nativeEmptyResponse) throw new Error('GitHub Copilot returned an invalid or incomplete JSON event stream.');
-  return content.trim();
-}
+import { CopilotStream } from './copilot-stream.ts';
 
 export function copilotAdapter(model?: string, invoke: InvokeProvider = invokeProvider): AgentAdapter {
   return async (call, signal) => {
@@ -23,21 +14,21 @@ export function copilotAdapter(model?: string, invoke: InvokeProvider = invokePr
     const prompt = call.prompt + '\n\nReturn a single JSON object matching the following JSON Schema. ' +
       'Output only the JSON object.\n' + JSON.stringify(call.schema);
     // JSONL preserves message bytes; text mode can wrap inside a JSON string.
-    let stream: string;
-    let nativeEmptyResponse = false;
-    try { stream = await invoke('copilot', args, { ...call, prompt }, signal); }
+    const stream = new CopilotStream();
+    let buffered: string;
+    let exitCode: 0 | 1 = 0;
+    try { buffered = await invoke('copilot', args, { ...call, prompt }, signal, chunk => stream.write(chunk)); }
     catch (error) {
       if (!(error instanceof ProviderExitError) || error.exitCode !== 1 || error.stderrTruncated ||
           error.stderr.trim() !== 'Error: The model returned an empty response, so the run produced no answer.') throw error;
-      stream = error.stdout;
-      nativeEmptyResponse = true;
+      buffered = error.stdout;
+      exitCode = 1;
     }
-    const raw = responseContent(stream, nativeEmptyResponse);
+    // Injected invokers can return buffered stdout instead of forwarding chunks.
+    if (buffered) stream.write(Buffer.from(buffered, 'utf8'));
+    const raw = stream.content(exitCode).trim();
+    if (exitCode === 1 && raw) throw new Error('GitHub Copilot returned an invalid or incomplete JSON event stream.');
     const fence = /^`{3}(?:json)?[^\S\r\n]*\r?\n([\s\S]*?)\r?\n`{3}$/i.exec(raw);
-    const output = parseOutput(fence ? fence[1] : raw, 'GitHub Copilot');
-    if (output === null || typeof output !== 'object' || Array.isArray(output)) {
-      throw new ModelOutputError('schema', 'GitHub Copilot returned a response that is not a JSON object.', raw);
-    }
-    return output;
+    return parseOutput(fence ? fence[1] : raw, 'GitHub Copilot');
   };
 }
