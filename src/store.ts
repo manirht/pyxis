@@ -4,8 +4,9 @@ import { createConnection, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import type { PinnedInput, Result, RunRecord } from './types.ts'
+import type { PinnedInput, Result, Role, RunRecord } from './types.ts'
 import { MAX_MODEL_OUTPUT_ATTEMPTS } from './limits.ts'
+import { renderRunReport, type CallAudit, type RunEvent } from './run-report.ts'
 
 const roles = ['A', 'B']
 const attemptArtifacts = ['investigate', 'critique', 'draft', 'revise', 'vote-v1', 'vote-v2']
@@ -109,6 +110,10 @@ export class RunStore {
       updatedAt: now, finishedAt: null, artifacts: [], proposalDigests: {}, error: null,
       cleanupPending: false, cleanupError: null }
     await mkdir(this.directory(id), { mode: 0o700 })
+    // The manifest commits submission only after its initial local records exist.
+    // A failed initial report/audit write must not leave resumable queued work.
+    await this.appendEvent(id, { timestamp: now, kind: 'run-created', stage: run.stage, status: run.status })
+    await this.writeReport(run)
     await atomicWrite(join(this.directory(id), 'run.json'), jsonBytes(run))
     return run
   }
@@ -120,21 +125,90 @@ export class RunStore {
 
   async ids() { return (await readdir(this.root, { withFileTypes: true })).filter(e => e.isDirectory() && isRunId(e.name)).map(e => e.name) }
 
+  async list(): Promise<RunRecord[]> {
+    const records = await Promise.all((await this.ids()).map(id => this.get(id)))
+    return records.filter((run): run is RunRecord => run !== null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, 100)
+  }
+
   async artifacts(id: string): Promise<Record<string, unknown>> {
     const run = await this.get(id)
-    if (!run) return {}
+    return run ? this.readArtifacts(run) : {}
+  }
+
+  private async readArtifacts(run: RunRecord): Promise<Record<string, unknown>> {
     return Object.fromEntries(await Promise.all(run.artifacts.filter(a => knownArtifacts.includes(a)).map(async a =>
-      [a, await readJson(join(this.directory(id), a))] as const)))
+      [a, await readJson(join(this.directory(run.id), a))] as const)))
   }
 
   change(id: string, update: (r: RunRecord) => void | Promise<void>) {
     return this.serialized(async () => {
       const run = await this.get(id)
       if (!run) throw new Error('Run record unavailable')
+      const previous = { status: run.status, stage: run.stage, artifacts: [...run.artifacts] }
       await update(run)
       run.updatedAt = new Date().toISOString()
       await atomicWrite(join(this.directory(id), 'run.json'), jsonBytes(run))
+      if (run.status !== previous.status || run.stage !== previous.stage) {
+        await this.appendEvent(id, { timestamp: run.updatedAt, kind: 'run-state', stage: run.stage, status: run.status })
+      }
+      for (const artifact of run.artifacts.filter(name => !previous.artifacts.includes(name))) {
+        await this.appendEvent(id, { timestamp: run.updatedAt, kind: 'artifact-published', stage: run.stage, status: run.status, artifact })
+      }
+      await this.writeReport(run)
       return run
+    })
+  }
+
+  private async appendEvent(id: string, event: RunEvent) {
+    const handle = await open(join(this.directory(id), 'events.jsonl'), 'a', 0o600)
+    try { await handle.writeFile(JSON.stringify(event) + '\n'); await handle.sync() }
+    finally { await handle.close() }
+  }
+
+  private async writeReport(run: RunRecord) {
+    const report = renderRunReport(run, await this.readArtifacts(run))
+    await atomicWrite(join(this.directory(run.id), 'REPORT.md'), report)
+    return report
+  }
+
+  report(id: string): Promise<string | null> {
+    return this.serialized(async () => {
+      const run = await this.get(id)
+      return run ? this.writeReport(run) : null
+    })
+  }
+
+  startCall(id: string, details: { stage: string, action: string, role: Role, attempt: number }, prompt: string): Promise<CallAudit> {
+    if (!attemptArtifacts.includes(`attempts/${details.stage}/${details.role}-${details.attempt}.json`)) {
+      return Promise.reject(new Error('Unknown call attempt'))
+    }
+    return this.serialized(async () => {
+      const run = await this.get(id)
+      if (!run || run.status !== 'running') throw new Error('Run has stopped accepting calls')
+      // Save the full workflow prompt passed to the adapter, before adapter schema
+      // instructions and launcher pinned-checkout locations are added. This is
+      // not exact provider stdin or a full native CLI transcript. Like raw
+      // diagnostics, it needs POSIX owner-only permissions; omit it on Windows.
+      if (this.retainRawDiagnostics) {
+        const file = join(this.directory(id), `prompts/${details.stage}/${details.role}-${details.attempt}.txt`)
+        try { await stat(file); throw new Error('Call prompt already saved') }
+        catch (e) { if (!isMissing(e)) throw e }
+        await atomicWrite(file, prompt)
+      }
+      const call: CallAudit = { ...details, provider: run.agents[details.role].adapter,
+        model: run.agents[details.role].model, startedAt: new Date().toISOString() }
+      await this.appendEvent(id, { ...call, timestamp: call.startedAt, kind: 'call-started', status: 'running' })
+      return call
+    })
+  }
+
+  finishCall(id: string, call: CallAudit, status: 'validated' | 'rejected' | 'failed' | 'cancelled', category?: string) {
+    return this.serialized(async () => {
+      const finishedAt = new Date().toISOString()
+      await this.appendEvent(id, { ...call, timestamp: finishedAt, finishedAt,
+        durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(call.startedAt)),
+        kind: 'call-finished', status, ...(category ? { category } : {}) })
     })
   }
 
@@ -197,7 +271,11 @@ export class RunStore {
 
   async reconcile(id: string) {
     const run = await this.get(id)
-    if (!run || (run.status !== 'running' && run.status !== 'queued')) return run
+    if (!run) return run
+    if (run.status !== 'running' && run.status !== 'queued') {
+      await this.report(id)
+      return run
+    }
     return this.change(id, async fresh => {
       const directory = this.directory(id)
       fresh.artifacts = []

@@ -5,6 +5,7 @@ import { makePrompt } from './prompts.ts'
 import { parseOutput, shapes } from './outputs.ts'
 import { ModelOutputError } from '../output-error.ts'
 import { MAX_MODEL_OUTPUT_ATTEMPTS } from '../limits.ts'
+import type { CallAudit } from '../run-report.ts'
 
 class RoleFailure extends Error {
   role: Role
@@ -39,8 +40,12 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
       for (let attempt = 1; attempt <= MAX_MODEL_OUTPUT_ATTEMPTS; attempt++) {
         signal.throwIfAborted()
         let raw: unknown
+        let audit: CallAudit | undefined
+        let completed = false
         try {
           const prompt = makePrompt(run, role, action, withContext ? workspace.context : '', material, feedback)
+          audit = await store.startCall(id, { stage, action, role, attempt }, prompt)
+          signal.throwIfAborted()
           raw = await adapters[role]({ runId: id, role, stage: action, cwd: workspace.cwd,
             evidenceDir: workspace.evidenceDir, prompt, schema, schemaPath }, signal)
           signal.throwIfAborted()
@@ -48,8 +53,15 @@ export async function executeRun(store: RunStore, run: RunRecord, adapters: Adap
           const value = parseOutput(action, raw, target)
           if ('evidence' in value) await validateEvidence(run.input, value.evidence, signal)
           signal.throwIfAborted()
+          await store.finishCall(id, audit, 'validated')
+          completed = true
           return value
         } catch (e) {
+          if (audit && !completed) {
+            await store.finishCall(id, audit, e instanceof ModelOutputError ? 'rejected' : signal.aborted ? 'cancelled' : 'failed',
+              e instanceof ModelOutputError ? e.category : undefined)
+          }
+
           if (!(e instanceof ModelOutputError)) throw e
           const willRetry = !signal.aborted && e.retryable && attempt < MAX_MODEL_OUTPUT_ATTEMPTS
           const response = e.response ?? raw ?? null

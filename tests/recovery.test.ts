@@ -43,6 +43,10 @@ test('a transient manifest failure still exposes the report already published to
   assert.match(result.error.message, /manifest/)
   assert.deepEqual(result.artifacts, ['reports/A.json'])
   assert.deepEqual(artifacts['reports/A.json'], report)
+  const readable = await store.report(run.id)
+  assert.ok(readable?.includes(report.hypothesis))
+  assert.ok(readable?.includes('Simulated failure replacing the manifest'))
+  assert.ok(readable?.includes('reports/A.json'))
 })
 
 test('only one service owns a store at a time, even with alternate path spellings', async t => {
